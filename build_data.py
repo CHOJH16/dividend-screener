@@ -2,6 +2,9 @@
 """
 S&P 500 + 나스닥 100 + 대표 배당 ETF의
 10년 배당수익률 밴드 데이터를 만들어 data/screener_us.json 으로 저장한다.
+
+배당수익률은 '날짜 창(365일) 합산'이 아니라
+'배당 주기 기반 연환산(직전 freq회 합산)' 방식으로 계산한다.
 """
 
 import io
@@ -20,6 +23,7 @@ HISTORY_YEARS   = 10      # 밴드 계산에 쓸 기간
 MIN_YEARS       = 3       # 배당 이력이 이보다 짧으면 제외
 FLAT_TOLERANCE  = 0.02    # 2% 이내 감소는 '유지'로 인정 (반올림 오차 흡수)
 SPECIAL_DIV_CAP = 2.0     # 직전 3년 중앙값의 2배 초과분은 특별배당으로 보고 잘라냄
+STALE_FACTOR    = 1.8     # 정상 주기의 1.8배가 지나도록 배당이 없으면 중단으로 간주
 MAX_YIELD       = 40.0    # 이보다 높은 수익률은 데이터 오류로 보고 제외
 CHUNK           = 25      # 한 번에 받아올 종목 수
 SLEEP           = 2.0     # 묶음 사이 쉬는 시간(초) — 야후 차단 방지
@@ -201,14 +205,46 @@ def fetch_all(tickers):
     return frames
 
 
+# ----------------------------------------------------------- 배당 주기 · 연환산
+def detect_freq(dv):
+    """배당 지급 주기(연간 횟수)를 추정한다. 1, 2, 4, 12 중 하나."""
+    d = dv[dv.index >= dv.index[-1] - pd.Timedelta(days=1100)]
+    if len(d) < 3:
+        d = dv
+    if len(d) < 2:
+        return 1
+    gaps = d.index.to_series().diff().dt.days.dropna()
+    gaps = gaps[gaps > 3]                      # 같은 시기 중복 지급 제거
+    if gaps.empty:
+        return 1
+    g = float(gaps.median())
+    return min([1, 2, 4, 12], key=lambda f: abs(g - 365.25 / f))
+
+
+def annualized(dv, idx, freq):
+    """각 시점의 연환산 배당금 = 그 시점까지의 '직전 freq회' 배당 합.
+
+    날짜 창 방식과 달리 배당락일이 하루이틀 밀려도 횟수가 더 잡히지 않는다.
+    배당이 정상 주기보다 오래 끊기면 0으로 떨어뜨린다.
+    """
+    rolled = dv.rolling(freq, min_periods=freq).sum()
+    a = rolled.reindex(idx, method="ffill")
+
+    last = pd.Series(dv.index, index=dv.index).reindex(idx, method="ffill")
+    gap = (pd.Series(idx, index=idx) - last).dt.days
+    stale = gap > (365.25 / freq) * STALE_FACTOR
+
+    return a.where(~stale, 0.0).fillna(0.0)
+
+
 # ----------------------------------------------------------- 배당 증가(유지) 기간
-def dividend_streak(div, today):
+def dividend_streak(dv, today):
     """동결도 유지로 인정. 감액이 나오는 순간 끊긴다."""
-    if div.empty:
+    if dv.empty:
         return 0
 
-    yr_sum = div.groupby(div.index.year).sum()
-    yr_cnt = div.groupby(div.index.year).size()
+    yr_sum = dv.groupby(dv.index.year).sum()
+    yr_cnt = dv.groupby(dv.index.year).size()
     yr_sum = yr_sum[yr_sum.index < today.year]     # 진행 중인 올해는 제외
     yr_cnt = yr_cnt[yr_cnt.index < today.year]
     if len(yr_sum) < 2:
@@ -216,7 +252,8 @@ def dividend_streak(div, today):
     if int(max(yr_sum.index)) < today.year - 1:    # 최근에 배당이 끊긴 종목
         return 0
 
-    modal = int(yr_cnt[yr_cnt > 0].median())       # 연간 표준 지급 횟수
+    pos = yr_cnt[yr_cnt > 0]
+    modal = int(pos.median()) if not pos.empty else 0
 
     norm = {}
     for y in yr_sum.index:
@@ -257,25 +294,33 @@ def analyze(sym, meta, df, today):
     px = pd.to_numeric(df["Close"], errors="coerce").dropna()
     dv = pd.to_numeric(df["Dividends"], errors="coerce").fillna(0.0)
     px.index, dv.index = to_naive(px.index), to_naive(dv.index)
+
     dv = dv[dv > 0]
+    dv = dv.groupby(dv.index).sum().sort_index()   # 같은 날 중복 합치기
+    px = px.groupby(px.index).last().sort_index()
     if len(px) < 250 or dv.empty:
         return None
 
     idx = px.index.union(dv.index).sort_values()
     p = px.reindex(idx).ffill()
-    d = dv.reindex(idx).fillna(0.0)
-    ttm = d.rolling("365D").sum()
 
-    y = (ttm / p * 100.0).replace([np.inf, -np.inf], np.nan).dropna()
+    freq = detect_freq(dv)
+    ann = annualized(dv, idx, freq)
+
+    y = (ann / p * 100.0).replace([np.inf, -np.inf], np.nan).dropna()
     y = y[(y > 0) & (y < MAX_YIELD)]
+    if y.empty:
+        return None
     y = y[y.index >= y.index[-1] - pd.Timedelta(days=365.25 * HISTORY_YEARS)]
     yw = y.resample("W").last().dropna()
     if len(yw) < MIN_YEARS * 52:
         return None
 
     cur_p = float(p.iloc[-1])
-    cur_ttm = float(ttm.iloc[-1])
-    cur_y = cur_ttm / cur_p * 100.0
+    cur_ann = float(ann.iloc[-1])
+    if cur_p <= 0 or cur_ann <= 0:
+        return None
+    cur_y = cur_ann / cur_p * 100.0
     if cur_y <= 0 or cur_y >= MAX_YIELD:
         return None
 
@@ -289,7 +334,7 @@ def analyze(sym, meta, df, today):
         "idx": meta["idx"],
         "etf": meta["etf"],
         "px": round(cur_p, 2),
-        "ttm": round(cur_ttm, 4),
+        "ttm": round(cur_ann, 4),
         "y": round(cur_y, 2),
         "y10": round(float(np.percentile(yw, 10)), 2),
         "y25": round(float(np.percentile(yw, 25)), 2),
@@ -299,6 +344,7 @@ def analyze(sym, meta, df, today):
         "pct": round(pct, 1),
         "band": band,
         "bandLabel": label,
+        "freq": freq,
         "streak": dividend_streak(dv, today),
         "yrs": round((yw.index[-1] - yw.index[0]).days / 365.25, 1),
     }
@@ -336,10 +382,18 @@ def main():
     if len(items) < 100:
         raise SystemExit(f"수집 결과가 너무 적습니다({len(items)}개). 다시 실행하세요.")
 
+    # 검증용 출력
+    for chk in ("PFE", "KO", "MMM", "SCHD"):
+        for it in items:
+            if it["sym"] == chk:
+                print(f"[확인] {chk}: 연 {it['freq']}회 · 배당 {it['ttm']} · "
+                      f"수익률 {it['y']}% · 백분위 {it['pct']}")
+
     items.sort(key=lambda x: -x["pct"])
     os.makedirs("data", exist_ok=True)
+    kst = dt.datetime.now(dt.timezone.utc) + dt.timedelta(hours=9)
     payload = {
-        "updated": (dt.datetime.utcnow() + dt.timedelta(hours=9)).strftime("%Y-%m-%d %H:%M KST"),
+        "updated": kst.strftime("%Y-%m-%d %H:%M KST"),
         "universe": len(uni),
         "count": len(items),
         "items": items,
