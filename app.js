@@ -1,4 +1,4 @@
-const DATA_URL = "./data/screener_us.json";
+const DATA_FILE = "data/screener_us.json";
 
 const BAND = {
   "-2": { label: "매우 고평가", cls: "b--2" },
@@ -8,13 +8,13 @@ const BAND = {
   "2":  { label: "매우 저평가", cls: "b-2"  },
 };
 
-/* 이력이 이 값보다 짧으면 '짧은 이력'으로 보고 딱지를 붙인다 */
+/* 이력이 이 값보다 짧으면 종목명 옆에 회색 딱지를 붙인다 */
 const FULL_HISTORY = 9.5;
 
 /* 기본 필터값 — 여기만 고치면 화면도 자동으로 따라간다 */
 const DEFAULTS = {
   idx: ["SP500", "NDX100"], streak: 10, minY: 0,
-  band: "all", q: "", trap: true, hist: false,
+  band: "all", q: "", trap: true,
   sort: "pct", dir: -1,
 };
 
@@ -22,43 +22,108 @@ let ALL = [];
 let S = { ...DEFAULTS, idx: new Set(DEFAULTS.idx) };
 
 const $ = (s) => document.querySelector(s);
-const fmtP = (v) => "$" + v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const fmtY = (v) => v.toFixed(2) + "%";
+const fmtP = (v) => "$" + Number(v).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fmtY = (v) => Number(v).toFixed(2) + "%";
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-/* ---------------------------------------------------- 상태 → 화면 동기화
-   시작할 때와 초기화할 때 내부 값을 화면 컨트롤에 그대로 찍어준다.
-   이렇게 해야 '화면엔 10년인데 실제로는 5년으로 걸러지는' 일이 없다. */
+/* ---------------------------------------------------- 상태 → 화면 동기화 */
 function syncControls() {
   $("#f-streak").value = String(S.streak);
   $("#f-miny").value   = String(S.minY);
   $("#f-band").value   = S.band;
   $("#f-q").value      = S.q;
   $("#f-trap").checked = S.trap;
-  $("#f-hist").checked = S.hist;
   document.querySelectorAll("#f-idx .chip").forEach((x) =>
     x.classList.toggle("on", S.idx.has(x.dataset.v)));
 
-  /* 드롭다운에 해당 값이 없으면 값이 비어버리므로 안전장치를 둔다 */
-  if ($("#f-streak").value === "") { S.streak = 0; $("#f-streak").value = "0"; }
-  if ($("#f-miny").value   === "") { S.minY   = 0; $("#f-miny").value   = "0"; }
-  if ($("#f-band").value   === "") { S.band   = "all"; $("#f-band").value = "all"; }
+  if ($("#f-streak").value === "") { S.streak = 0;     $("#f-streak").value = "0"; }
+  if ($("#f-miny").value   === "") { S.minY   = 0;     $("#f-miny").value   = "0"; }
+  if ($("#f-band").value   === "") { S.band   = "all"; $("#f-band").value   = "all"; }
+}
+
+/* ---------------------------------------------------- 데이터 주소 후보 */
+function candidates() {
+  const list = [];
+  try { list.push(new URL(DATA_FILE, location.href).href); } catch (e) {}
+  list.push("./" + DATA_FILE);
+  const m = location.hostname.match(/^([^.]+)\.github\.io$/i);
+  if (m) {
+    const user = m[1];
+    const seg = location.pathname.split("/").filter(Boolean);
+    const repo = seg.length ? seg[0] : user + ".github.io";
+    list.push(`https://raw.githubusercontent.com/${user}/${repo}/main/${DATA_FILE}`);
+  }
+  return list.filter((v, i) => list.indexOf(v) === i);
+}
+
+function getJSON(url) {
+  if (typeof fetch === "function") {
+    return fetch(url, { cache: "no-store" }).then((r) => {
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return r.json();
+    });
+  }
+  return new Promise((res, rej) => {
+    const x = new XMLHttpRequest();
+    x.open("GET", url, true);
+    x.timeout = 15000;
+    x.onload = () => {
+      if (x.status < 200 || x.status >= 300) return rej(new Error("HTTP " + x.status));
+      try { res(JSON.parse(x.responseText)); } catch (e) { rej(new Error("JSON 오류")); }
+    };
+    x.onerror = () => rej(new Error("네트워크 오류"));
+    x.ontimeout = () => rej(new Error("시간 초과"));
+    x.send();
+  });
+}
+
+function showError(title, detail) {
+  $("#updated").textContent = title;
+  $("#tbody").innerHTML =
+    '<tr><td colspan="7" class="empty">' + title +
+    '<br><small style="opacity:.7">' + String(detail || "").slice(0, 200) + "</small><br><br>" +
+    '<button type="button" id="btn-retry" class="ghost">다시 시도</button></td></tr>';
+  const b = $("#btn-retry");
+  if (b) b.onclick = () => {
+    $("#tbody").innerHTML = '<tr><td colspan="7" class="empty">다시 불러오는 중입니다…</td></tr>';
+    load();
+  };
 }
 
 /* ---------------------------------------------------- 데이터 로드 */
 async function load() {
+  $("#updated").textContent = "불러오는 중…";
+  let json = null, lastErr = "";
+
+  outer:
+  for (const base of candidates()) {
+    for (let n = 1; n <= 3; n++) {
+      const url = base + (base.indexOf("?") >= 0 ? "&" : "?") + "t=" + Date.now();
+      try {
+        json = await getJSON(url);
+        if (json && json.items) break outer;
+        throw new Error("내용 없음");
+      } catch (e) {
+        lastErr = (e && e.message) ? e.message : "알 수 없는 오류";
+        json = null;
+        await sleep(700 * n);
+      }
+    }
+  }
+
+  if (!json) {
+    showError("데이터를 받지 못했습니다", "원인: " + lastErr + " · 잠시 후 다시 시도 버튼을 눌러 주세요.");
+    return;
+  }
+
+  ALL = json.items || [];
+  $("#updated").textContent = json.updated || "-";
+  $("#cnt-all").textContent = ALL.length;
+
   try {
-    const res = await fetch(DATA_URL + "?t=" + Date.now());
-    if (!res.ok) throw new Error(res.status);
-    const json = await res.json();
-    ALL = json.items || [];
-    $("#updated").textContent = json.updated || "-";
-    $("#cnt-all").textContent = ALL.length;
     render();
   } catch (e) {
-    $("#updated").textContent = "불러오기 실패";
-    $("#tbody").innerHTML =
-      '<tr><td colspan="7" class="empty">데이터 파일이 아직 없습니다.<br>' +
-      'GitHub의 Actions 탭에서 update-and-deploy 워크플로를 한 번 실행해 주세요.</td></tr>';
+    showError("화면 표시 중 오류", (e && e.message) || e);
   }
 }
 
@@ -69,25 +134,25 @@ function view() {
   const minY = Number(S.minY) || 0;
 
   let rows = ALL.filter((d) => {
-    if (!d.idx.some((i) => S.idx.has(i))) return false;
+    const idx = d.idx || [];
+    if (!idx.some((i) => S.idx.has(i))) return false;
     if (minStreak > 0 && Number(d.streak) < minStreak) return false;
     if (minY > 0 && Number(d.y) < minY) return false;
     if (S.trap && d.y > 15) return false;
-    if (S.hist && d.yrs < FULL_HISTORY) return false;
     if (S.band === "cheap" && d.pct < 70) return false;
     if (S.band === "verycheap" && d.pct < 90) return false;
     if (S.band === "notrich" && d.pct < 30) return false;
-    if (q && !(d.sym.toLowerCase().includes(q) ||
-               d.name.toLowerCase().includes(q) ||
-               d.sec.toLowerCase().includes(q))) return false;
+    if (q && !((d.sym || "").toLowerCase().includes(q) ||
+               (d.name || "").toLowerCase().includes(q) ||
+               (d.sec || "").toLowerCase().includes(q))) return false;
     return true;
   });
 
   const k = S.sort;
   rows.sort((a, b) => {
-    let x = a[k], y = b[k];
-    if (typeof x === "string") return x.localeCompare(y) * S.dir;
-    return (x - y) * S.dir;
+    const x = a[k], y = b[k];
+    if (typeof x === "string") return String(x).localeCompare(String(y)) * S.dir;
+    return ((x || 0) - (y || 0)) * S.dir;
   });
   return rows;
 }
@@ -109,11 +174,12 @@ function render() {
   }
 
   $("#tbody").innerHTML = rows.map((d) => {
-    const b = BAND[String(d.band)];
+    const b = BAND[String(d.band)] || BAND["0"];
+    const idx = d.idx || [];
     const tags = [];
-    if (d.idx.includes("DIVETF")) tags.push("ETF");
-    else if (d.idx.includes("SP500") && d.idx.includes("NDX100")) tags.push("S&P·NDX");
-    else if (d.idx.includes("NDX100")) tags.push("NDX");
+    if (idx.includes("DIVETF")) tags.push("ETF");
+    else if (idx.includes("SP500") && idx.includes("NDX100")) tags.push("S&P·NDX");
+    else if (idx.includes("NDX100")) tags.push("NDX");
     const warn = d.yrs < FULL_HISTORY
       ? `<span class="tag" title="배당수익률 밴드를 ${d.yrs}년치 데이터로만 계산했습니다">이력 ${d.yrs}년</span>`
       : "";
@@ -144,14 +210,14 @@ function render() {
 function openModal(sym) {
   const d = ALL.find((x) => x.sym === sym);
   if (!d) return;
-  const b = BAND[String(d.band)];
+  const b = BAND[String(d.band)] || BAND["0"];
 
   $("#m-name").textContent = d.name;
   $("#m-sym").textContent = `${d.sym} · ${d.sec} · 배당 증가(유지) ${d.streak}년 · 밴드 계산 기간 ${d.yrs}년`;
   $("#m-badge").textContent = b.label;
   $("#m-badge").className = "badge " + b.cls;
   $("#m-px").textContent = fmtP(d.px);
-  $("#m-ttm").textContent = "$" + d.ttm.toFixed(2);
+  $("#m-ttm").textContent = "$" + Number(d.ttm).toFixed(2);
   $("#m-y").textContent = fmtY(d.y);
   $("#m-pct").textContent = Math.round(d.pct) + "백분위";
   $("#m-marker").style.left = d.pct + "%";
@@ -187,7 +253,6 @@ $("#f-streak").onchange = (e) => { S.streak = +e.target.value; render(); };
 $("#f-miny").onchange   = (e) => { S.minY   = +e.target.value; render(); };
 $("#f-band").onchange   = (e) => { S.band   = e.target.value;  render(); };
 $("#f-trap").onchange   = (e) => { S.trap   = e.target.checked; render(); };
-$("#f-hist").onchange   = (e) => { S.hist   = e.target.checked; render(); };
 
 let t = null;
 $("#f-q").oninput = (e) => {
@@ -214,7 +279,7 @@ $("#btn-csv").onclick = () => {
   const rows = view();
   const head = ["티커", "종목명", "주가", "현재배당수익률", "10년중앙", "백분위", "밴드", "배당증가유지기간", "밴드계산기간", "섹터"];
   const body = rows.map((d) => [d.sym, `"${d.name}"`, d.px, d.y, d.y50,
-    d.pct, BAND[String(d.band)].label, d.streak, d.yrs, `"${d.sec}"`].join(","));
+    d.pct, (BAND[String(d.band)] || BAND["0"]).label, d.streak, d.yrs, `"${d.sec}"`].join(","));
   const blob = new Blob(["\uFEFF" + [head.join(","), ...body].join("\n")],
     { type: "text/csv;charset=utf-8" });
   const a = document.createElement("a");
@@ -230,6 +295,5 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") $("#modal").hidden = true;
 });
 
-/* 화면을 내부 값에 맞춘 다음 데이터를 읽는다 */
 syncControls();
 load();
