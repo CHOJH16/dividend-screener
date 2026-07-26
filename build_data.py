@@ -30,6 +30,42 @@ SLEEP           = 2.0     # 묶음 사이 쉬는 시간(초) — 야후 차단 �
 
 UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
 
+# ----------------------------------------------------------- 섹터 한글 이름
+SECTOR_KO = {
+    # GICS (위키피디아 / S&P 목록 기준)
+    "Information Technology": "정보기술",
+    "Health Care":            "헬스케어",
+    "Financials":             "금융",
+    "Consumer Discretionary": "경기소비재",
+    "Consumer Staples":       "필수소비재",
+    "Communication Services": "커뮤니케이션",
+    "Industrials":            "산업재",
+    "Energy":                 "에너지",
+    "Utilities":              "유틸리티",
+    "Real Estate":            "부동산",
+    "Materials":              "소재",
+    # Yahoo Finance 표기
+    "Technology":             "정보기술",
+    "Healthcare":             "헬스케어",
+    "Financial Services":     "금융",
+    "Consumer Cyclical":      "경기소비재",
+    "Consumer Defensive":     "필수소비재",
+    "Basic Materials":        "소재",
+    "Industrial Goods":       "산업재",
+    "Services":               "서비스",
+    "ETF":                    "ETF",
+}
+
+
+def ko_sector(name):
+    if not name:
+        return "기타"
+    s = str(name).strip()
+    if s in ("", "-", "nan", "None"):
+        return "기타"
+    return SECTOR_KO.get(s, s)
+
+
 # ----------------------------------------------------------- 배당 ETF 목록
 DIVIDEND_ETFS = {
     "SCHD": "Schwab US Dividend Equity ETF",
@@ -201,6 +237,8 @@ def fetch_all(tickers):
             time.sleep(1.2)
         missing = again
 
+    if missing:
+        print("[수집 실패 목록]", " ".join(sorted(missing)))
     print(f"[수집] 성공 {len(frames)}종목 / 실패 {len(missing)}종목")
     return frames
 
@@ -330,7 +368,7 @@ def analyze(sym, meta, df, today):
     return {
         "sym": sym,
         "name": meta["name"],
-        "sec": meta["sec"] or "-",
+        "sec": meta["sec"],
         "idx": meta["idx"],
         "etf": meta["etf"],
         "px": round(cur_p, 2),
@@ -369,25 +407,30 @@ def main():
         if r:
             items.append(r)
 
-    # 섹터가 비어 있는 종목만 개별 조회
+    # 섹터가 비어 있는 종목만 개별 조회 후, 전부 한글로 변환
     for it in items:
-        if it["sec"] in ("", "-"):
+        if str(it["sec"]).strip() in ("", "-", "nan", "None"):
             try:
                 s = yf.Ticker(it["sym"]).info.get("sector")
-                it["sec"] = s if s else "-"
+                it["sec"] = s if s else ""
             except Exception:
-                it["sec"] = "-"
+                it["sec"] = ""
             time.sleep(0.4)
+        it["sec"] = ko_sector(it["sec"])
 
     if len(items) < 100:
         raise SystemExit(f"수집 결과가 너무 적습니다({len(items)}개). 다시 실행하세요.")
 
     # 검증용 출력
-    for chk in ("PFE", "KO", "MMM", "SCHD"):
-        for it in items:
-            if it["sym"] == chk:
-                print(f"[확인] {chk}: 연 {it['freq']}회 · 배당 {it['ttm']} · "
-                      f"수익률 {it['y']}% · 백분위 {it['pct']}")
+    for chk in ("PFE", "MKC", "MCK", "KO", "MMM", "SCHD"):
+        hit = next((x for x in items if x["sym"] == chk), None)
+        if hit:
+            print(f"[확인] {chk} {hit['name']} · {hit['sec']} · 연 {hit['freq']}회 · "
+                  f"배당 {hit['ttm']} · 수익률 {hit['y']}% · 백분위 {hit['pct']} · "
+                  f"유지 {hit['streak']}년")
+        else:
+            print(f"[확인] {chk} → 결과에 없음 "
+                  f"(유니버스 포함 여부: {'예' if chk in uni else '아니오'})")
 
     items.sort(key=lambda x: -x["pct"])
     os.makedirs("data", exist_ok=True)
