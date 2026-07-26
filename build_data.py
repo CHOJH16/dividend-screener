@@ -3,8 +3,10 @@
 S&P 500 + 나스닥 100 + 대표 배당 ETF의
 10년 배당수익률 밴드 데이터를 만들어 data/screener_us.json 으로 저장한다.
 
-배당수익률은 '날짜 창(365일) 합산'이 아니라
-'배당 주기 기반 연환산(직전 freq회 합산)' 방식으로 계산한다.
+- 배당수익률은 '날짜 창(365일) 합산'이 아니라
+  '배당 주기 기반 연환산(직전 freq회 합산)' 방식으로 계산한다.
+- 연환산 준비 구간(첫 freq회를 채우는 기간)을 버리고도 온전한 10년이 남도록
+  실제로는 12년치를 내려받는다.
 """
 
 import io
@@ -20,6 +22,7 @@ import yfinance as yf
 
 # ----------------------------------------------------------- 설정값
 HISTORY_YEARS   = 10      # 밴드 계산에 쓸 기간
+FETCH_YEARS     = 12      # 실제로 내려받을 기간 (준비 구간 여유분 포함)
 MIN_YEARS       = 3       # 배당 이력이 이보다 짧으면 제외
 FLAT_TOLERANCE  = 0.02    # 2% 이내 감소는 '유지'로 인정 (반올림 오차 흡수)
 SPECIAL_DIV_CAP = 2.0     # 직전 3년 중앙값의 2배 초과분은 특별배당으로 보고 잘라냄
@@ -27,6 +30,8 @@ STALE_FACTOR    = 1.8     # 정상 주기의 1.8배가 지나도록 배당이 �
 MAX_YIELD       = 40.0    # 이보다 높은 수익률은 데이터 오류로 보고 제외
 CHUNK           = 25      # 한 번에 받아올 종목 수
 SLEEP           = 2.0     # 묶음 사이 쉬는 시간(초) — 야후 차단 방지
+
+START_DATE = (dt.date.today() - dt.timedelta(days=int(365.25 * FETCH_YEARS))).isoformat()
 
 UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
 
@@ -196,11 +201,12 @@ def to_naive(idx):
 
 def fetch_all(tickers):
     frames, missing = {}, []
+    print(f"[수집] {START_DATE} 이후 데이터를 내려받습니다.")
     for i in range(0, len(tickers), CHUNK):
         part = tickers[i:i + CHUNK]
         print(f"  다운로드 {i + 1}~{i + len(part)} / {len(tickers)}")
         try:
-            raw = yf.download(part, period=f"{HISTORY_YEARS}y", interval="1d",
+            raw = yf.download(part, start=START_DATE, interval="1d",
                               actions=True, auto_adjust=False, group_by="ticker",
                               threads=2, progress=False)
         except Exception as e:
@@ -226,7 +232,7 @@ def fetch_all(tickers):
         again = []
         for t in missing:
             try:
-                df = yf.Ticker(t).history(period=f"{HISTORY_YEARS}y", interval="1d",
+                df = yf.Ticker(t).history(start=START_DATE, interval="1d",
                                           auto_adjust=False, actions=True)
                 if df is not None and not df.empty:
                     frames[t] = df
@@ -365,6 +371,8 @@ def analyze(sym, meta, df, today):
     pct = float((yw < cur_y).mean() * 100.0)
     label, band = next((l, b) for th, l, b in BANDS if pct < th)
 
+    yrs = min((yw.index[-1] - yw.index[0]).days / 365.25, float(HISTORY_YEARS))
+
     return {
         "sym": sym,
         "name": meta["name"],
@@ -384,7 +392,7 @@ def analyze(sym, meta, df, today):
         "bandLabel": label,
         "freq": freq,
         "streak": dividend_streak(dv, today),
-        "yrs": round((yw.index[-1] - yw.index[0]).days / 365.25, 1),
+        "yrs": round(yrs, 1),
     }
 
 
@@ -422,12 +430,14 @@ def main():
         raise SystemExit(f"수집 결과가 너무 적습니다({len(items)}개). 다시 실행하세요.")
 
     # 검증용 출력
-    for chk in ("PFE", "MKC", "MCK", "KO", "MMM", "SCHD"):
+    short = sum(1 for x in items if x["yrs"] < 9.5)
+    print(f"[점검] 이력 10년 미만 종목: {short}개 / 전체 {len(items)}개")
+    for chk in ("PFE", "MKC", "MCK", "KO", "MMM", "SCHD", "JEPQ"):
         hit = next((x for x in items if x["sym"] == chk), None)
         if hit:
             print(f"[확인] {chk} {hit['name']} · {hit['sec']} · 연 {hit['freq']}회 · "
                   f"배당 {hit['ttm']} · 수익률 {hit['y']}% · 백분위 {hit['pct']} · "
-                  f"유지 {hit['streak']}년")
+                  f"유지 {hit['streak']}년 · 이력 {hit['yrs']}년")
         else:
             print(f"[확인] {chk} → 결과에 없음 "
                   f"(유니버스 포함 여부: {'예' if chk in uni else '아니오'})")
