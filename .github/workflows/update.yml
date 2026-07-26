@@ -2,8 +2,8 @@ name: update-and-deploy
 
 on:
   schedule:
-    - cron: "0 22 * * 1-5"    # 매 평일 22:00 UTC = 한국 07:00
-  workflow_dispatch:           # 버튼으로 직접 실행
+    - cron: "0 22 * * 1-5"    # 매 평일 22:00 UTC = 한국시간 아침 7시
+  workflow_dispatch:           # Actions 탭에서 버튼으로 직접 실행
   push:
     branches: [main]
 
@@ -11,21 +11,29 @@ permissions:
   contents: write
   pages: write
   id-token: write
+  actions: write
 
 concurrency:
   group: pages
   cancel-in-progress: false
 
 jobs:
+
+  # ---------------------------------------------------------------
+  # 1) 데이터 수집 → JSON 생성 → 사이트 배포
+  # ---------------------------------------------------------------
   build:
     runs-on: ubuntu-latest
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+    steps:
+      - name: 저장소 내려받기
+        uses: actions/checkout@v4
+
+      - name: 파이썬 설치
+        uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
@@ -37,11 +45,16 @@ jobs:
 
       - name: 데이터 저장
         run: |
-          git config user.name  "github-actions"
-          git config user.email "actions@github.com"
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add data/screener_us.json
-          git diff --staged --quiet || git commit -m "data: $(date -u +%F)"
-          git push || true
+          if git diff --staged --quiet; then
+            echo "변경 사항 없음"
+          else
+            git commit -m "data: $(date -u +%F)"
+            git pull --rebase --autostash origin main || true
+            git push || true
+          fi
 
       - name: 사이트 준비
         run: |
@@ -49,9 +62,33 @@ jobs:
           cp index.html style.css app.js _site/
           cp data/screener_us.json _site/data/
 
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
+      - name: Pages 설정
+        uses: actions/configure-pages@v5
+
+      - name: 파일 업로드
+        uses: actions/upload-pages-artifact@v3
         with:
           path: "_site"
-      - id: deployment
+
+      - name: 배포
+        id: deployment
         uses: actions/deploy-pages@v4
+
+  # ---------------------------------------------------------------
+  # 2) 60일 자동중지 방지 (예약 실행일 때만 동작)
+  # ---------------------------------------------------------------
+  keepalive:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - name: 예약 실행 타이머 초기화
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          for id in $(gh api "repos/$REPO/actions/workflows" --jq '.workflows[].id'); do
+            gh api -X PUT "repos/$REPO/actions/workflows/$id/enable" --silent || true
+          done
+          echo "타이머 초기화 완료"
