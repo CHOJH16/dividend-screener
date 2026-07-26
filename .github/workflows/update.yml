@@ -1,0 +1,57 @@
+name: update-and-deploy
+
+on:
+  schedule:
+    - cron: "0 22 * * 1-5"    # 매 평일 22:00 UTC = 한국 07:00
+  workflow_dispatch:           # 버튼으로 직접 실행
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 라이브러리 설치
+        run: pip install -r requirements.txt
+
+      - name: 데이터 생성
+        run: python build_data.py
+
+      - name: 데이터 저장
+        run: |
+          git config user.name  "github-actions"
+          git config user.email "actions@github.com"
+          git add data/screener_us.json
+          git diff --staged --quiet || git commit -m "data: $(date -u +%F)"
+          git push || true
+
+      - name: 사이트 준비
+        run: |
+          mkdir -p _site/data
+          cp index.html style.css app.js _site/
+          cp data/screener_us.json _site/data/
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: "_site"
+      - id: deployment
+        uses: actions/deploy-pages@v4
