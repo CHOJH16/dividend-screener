@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>미국 배당주 스크리너 · 10년 배당수익률 밴드</title>
 <meta name="description" content="S&P 500, 나스닥 100, 대표 배당 ETF를 10년 배당수익률 밴드로 스크리닝합니다.">
-<link rel="stylesheet" href="./style.css?v=3">
-<script src="./app.js?v=3" defer></script>
+<link rel="stylesheet" href="./style.css?v=5">
+<script src="./app.js?v=5" defer></script>
 </head>
 <body>
 
@@ -79,9 +79,6 @@
       <div class="f f-chk">
         <label class="chk"><input type="checkbox" id="f-trap" checked>
           배당수익률 15% 초과 제외 <span class="hint">(배당 트랩 방지)</span></label>
-        <label class="chk" title="배당수익률 밴드를 10년치 데이터로 계산한 종목만 남깁니다. 배당 시작이 늦은 종목은 밴드가 짧은 기간 기준이라 신뢰도가 낮습니다.">
-          <input type="checkbox" id="f-hist">
-          밴드 10년치 데이터가 있는 종목만 <span class="hint">(짧은 이력 제외)</span></label>
       </div>
     </div>
 
@@ -118,8 +115,8 @@
   <section class="notice">
     <b>투자 참고사항</b>
     <p>종목명 옆의 <b>이력 6.2년</b> 같은 회색 딱지는 배당 데이터가 10년보다 짧다는 표시입니다.
-       이런 종목의 백분위는 짧은 기간 안에서의 위치라 밴드 신뢰도가 낮으니
-       위 체크박스로 걸러서 보세요.</p>
+       이런 종목의 백분위는 짧은 기간 안에서의 위치라 밴드 신뢰도가 낮습니다.
+       배당 증가(유지) 기간을 10년 이상으로 두면 대부분 자동으로 걸러집니다.</p>
     <p>배당수익률이 높다고 반드시 저평가된 것은 아닙니다. 주가 급락이나 향후 배당 삭감 가능성 때문에
        배당수익률이 높아질 수도 있습니다. 지수 편입 종목만 다루므로 배당을 삭감해 지수에서 제외된
        기업은 애초에 목록에 없다는 점(생존 편향)도 감안하세요.</p>
