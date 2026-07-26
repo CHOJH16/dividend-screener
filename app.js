@@ -9,7 +9,7 @@ const BAND = {
 };
 
 const DEFAULTS = {
-  idx: ["SP500", "NDX100"], streak: 5, minY: 0,
+  idx: ["SP500", "NDX100"], streak: 10, minY: 0,
   band: "all", q: "", trap: true, hist: false,
   sort: "pct", dir: -1,
 };
