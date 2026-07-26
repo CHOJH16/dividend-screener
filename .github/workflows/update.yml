@@ -2,8 +2,8 @@ name: update-and-deploy
 
 on:
   schedule:
-    - cron: "0 22 * * 1-5"    # 매 평일 22:00 UTC = 한국시간 아침 7시
-  workflow_dispatch:           # Actions 탭에서 버튼으로 직접 실행
+    - cron: "0 22 * * 1-5"
+  workflow_dispatch:
   push:
     branches: [main]
 
@@ -18,18 +18,13 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-
-  # ---------------------------------------------------------------
-  # 1) 데이터 수집 → JSON 생성 → 사이트 배포
-  # ---------------------------------------------------------------
   build:
     runs-on: ubuntu-latest
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
-
     steps:
-      - name: 저장소 내려받기
+      - name: 저장소 가져오기
         uses: actions/checkout@v4
 
       - name: 파이썬 설치
@@ -37,35 +32,60 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: 라이브러리 설치
+      - name: 필요한 패키지 설치
         run: pip install -r requirements.txt
 
       - name: 데이터 생성
         run: python build_data.py
 
+      # 만들어진 원본을 Git이 건드릴 수 없는 곳에 즉시 보관한다.
+      - name: 원본 보관
+        run: |
+          mkdir -p /tmp/safe
+          cp data/screener_us.json /tmp/safe/screener_us.json
+
+      # 깨진 파일이면 여기서 실패시켜 배포를 막는다.
+      - name: 데이터 검사
+        run: |
+          if grep -q '^<<<<<<<\|^>>>>>>>\|^=======$' /tmp/safe/screener_us.json; then
+            echo "충돌 표시가 들어 있습니다. 중단합니다."
+            exit 1
+          fi
+          python -c "import json;d=json.load(open('/tmp/safe/screener_us.json',encoding='utf-8'));print('정상 · 종목 수', len(d['items']));assert len(d['items'])>100"
+
+      # 사이트는 보관해둔 원본으로 만든다. Git 작업 결과를 쓰지 않는다.
+      - name: 사이트 준비
+        run: |
+          mkdir -p _site/data
+          cp index.html style.css app.js _site/
+          cp /tmp/safe/screener_us.json _site/data/screener_us.json
+
+      # 저장소 커밋은 충돌이 나도 파일을 오염시키지 않는 방식으로 한다.
       - name: 데이터 저장
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add data/screener_us.json
           if git diff --staged --quiet; then
-            echo "변경 사항 없음"
+            echo "변경 없음"
           else
             git commit -m "data: $(date -u +%F)"
-            git pull --rebase --autostash origin main || true
-            git push || true
+            if ! git push; then
+              echo "충돌 발생 → 최신 상태 위에 새 데이터를 다시 올립니다."
+              git fetch origin main
+              git reset --hard origin/main
+              mkdir -p data
+              cp /tmp/safe/screener_us.json data/screener_us.json
+              git add data/screener_us.json
+              git commit -m "data: $(date -u +%F)" || true
+              git push
+            fi
           fi
-
-      - name: 사이트 준비
-        run: |
-          mkdir -p _site/data
-          cp index.html style.css app.js _site/
-          cp data/screener_us.json _site/data/
 
       - name: Pages 설정
         uses: actions/configure-pages@v5
 
-      - name: 파일 업로드
+      - name: 업로드
         uses: actions/upload-pages-artifact@v3
         with:
           path: "_site"
@@ -74,16 +94,13 @@ jobs:
         id: deployment
         uses: actions/deploy-pages@v4
 
-  # ---------------------------------------------------------------
-  # 2) 60일 자동중지 방지 (예약 실행일 때만 동작)
-  # ---------------------------------------------------------------
   keepalive:
     if: github.event_name == 'schedule'
     runs-on: ubuntu-latest
     permissions:
       actions: write
     steps:
-      - name: 예약 실행 타이머 초기화
+      - name: 스케줄 타이머 초기화
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
