@@ -133,22 +133,25 @@ async function load() {
   }
 }
 
-/* ---------------------------------------------------- 해자 표시 */
+/* ---------------------------------------------------- 해자 표시
+   애널리스트 등급만 사용합니다. 퀀트 모델 값(qmoat)은 재무지표만으로
+   산출돼 정성적 판단이 빠져 있으므로 등급으로 쓰지 않습니다.          */
 function moatRank(d) {
   if (d.moat && MOAT[d.moat]) return MOAT[d.moat].rank;
-  if (d.qmoat != null) return d.qmoat >= 0.7 ? 2.5 : d.qmoat >= 0.3 ? 1.5 : 0.5;
   return 0;
+}
+
+function isETF(d) {
+  return d.etf === true || (d.idx || []).indexOf("DIVETF") >= 0;
 }
 
 function moatCell(d) {
   const m = MOAT[d.moat];
   if (m) return `<span class="badge ${m.cls}">${m.label}</span>`;
-  if (d.qmoat != null) {
-    const q = Number(d.qmoat);
-    const lab = q >= 0.7 ? "넓음" : q >= 0.3 ? "좁음" : "없음";
-    return `<span class="badge moat-quant" title="애널리스트 등급이 없어 모닝스타 퀀트 모델 값(${q.toFixed(2)})으로 추정한 값입니다">${lab}?</span>`;
+  if (isETF(d)) {
+    return '<span class="moat-na" title="ETF는 개별 기업이 아니라 해자 등급 대상이 아닙니다">-</span>';
   }
-  return '<span class="moat-na">-</span>';
+  return '<span class="moat-unrated" title="모닝스타 애널리스트가 커버하지 않는 종목이라 해자 등급이 없습니다">미평가</span>';
 }
 
 /* ---------------------------------------------------- 필터 + 정렬 */
@@ -240,12 +243,10 @@ function openModal(sym) {
   if (!d) return;
   const b = BAND[String(d.band)] || BAND["0"];
 
-  let moatTxt = "해자 정보 없음";
-  if (d.moat && MOAT[d.moat]) {
-    moatTxt = "해자 " + MOAT[d.moat].label;
-  } else if (d.qmoat != null) {
-    moatTxt = `해자 추정 ${Number(d.qmoat).toFixed(2)} (퀀트)`;
-  }
+  let moatTxt;
+  if (d.moat && MOAT[d.moat]) moatTxt = "해자 " + MOAT[d.moat].label;
+  else if (isETF(d)) moatTxt = "해자 등급 대상 아님";
+  else moatTxt = "해자 미평가";
 
   $("#m-name").textContent = d.name;
   $("#m-sym").textContent =
@@ -315,10 +316,10 @@ $("#btn-reset").onclick = () => {
 $("#btn-csv").onclick = () => {
   const rows = view();
   const head = ["티커", "종목명", "주가", "현재배당수익률", "10년중앙", "백분위", "밴드",
-                "배당증가유지기간", "해자", "퀀트해자", "밴드계산기간", "섹터"];
+                "배당증가유지기간", "해자", "밴드계산기간", "섹터"];
   const body = rows.map((d) => [d.sym, `"${d.name}"`, d.px, d.y, d.y50,
     d.pct, (BAND[String(d.band)] || BAND["0"]).label, d.streak,
-    d.moat || "", d.qmoat != null ? d.qmoat : "",
+    d.moat || (isETF(d) ? "" : "미평가"),
     d.yrs, `"${d.sec}"`].join(","));
   const blob = new Blob(["\uFEFF" + [head.join(","), ...body].join("\n")],
     { type: "text/csv;charset=utf-8" });
