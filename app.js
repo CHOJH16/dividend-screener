@@ -140,26 +140,9 @@ function moatRank(d) {
   return 0;
 }
 
-function starTitle(n) {
-  const t = {
-    5: "적정주가 대비 크게 저평가",
-    4: "적정주가 대비 저평가",
-    3: "적정주가 수준",
-    2: "적정주가 대비 고평가",
-    1: "적정주가 대비 크게 고평가",
-  };
-  return `모닝스타 별점 ${n}점 · ${t[n] || "-"} (해자 등급과는 별개인 밸류에이션 평가입니다)`;
-}
-
 function moatCell(d) {
   const m = MOAT[d.moat];
-  if (m) {
-    const n = +d.star;
-    const star = n
-      ? ` <small class="star" title="${starTitle(n)}">${"★".repeat(n)}</small>`
-      : "";
-    return `<span class="badge ${m.cls}">${m.label}</span>${star}`;
-  }
+  if (m) return `<span class="badge ${m.cls}">${m.label}</span>`;
   if (d.qmoat != null) {
     const q = Number(d.qmoat);
     const lab = q >= 0.7 ? "넓음" : q >= 0.3 ? "좁음" : "없음";
@@ -260,7 +243,6 @@ function openModal(sym) {
   let moatTxt = "해자 정보 없음";
   if (d.moat && MOAT[d.moat]) {
     moatTxt = "해자 " + MOAT[d.moat].label;
-    if (d.star) moatTxt += " · 별점 " + d.star + "점(밸류에이션)";
   } else if (d.qmoat != null) {
     moatTxt = `해자 추정 ${Number(d.qmoat).toFixed(2)} (퀀트)`;
   }
@@ -333,10 +315,10 @@ $("#btn-reset").onclick = () => {
 $("#btn-csv").onclick = () => {
   const rows = view();
   const head = ["티커", "종목명", "주가", "현재배당수익률", "10년중앙", "백분위", "밴드",
-                "배당증가유지기간", "해자", "퀀트해자", "별점", "밴드계산기간", "섹터"];
+                "배당증가유지기간", "해자", "퀀트해자", "밴드계산기간", "섹터"];
   const body = rows.map((d) => [d.sym, `"${d.name}"`, d.px, d.y, d.y50,
     d.pct, (BAND[String(d.band)] || BAND["0"]).label, d.streak,
-    d.moat || "", d.qmoat != null ? d.qmoat : "", d.star || "",
+    d.moat || "", d.qmoat != null ? d.qmoat : "",
     d.yrs, `"${d.sec}"`].join(","));
   const blob = new Blob(["\uFEFF" + [head.join(","), ...body].join("\n")],
     { type: "text/csv;charset=utf-8" });
