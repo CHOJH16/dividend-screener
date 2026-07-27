@@ -110,10 +110,10 @@ tbody tr{cursor:pointer} tbody tr:hover{background:#f8f8ff}
   .m-kpi{grid-template-columns:1fr}
 }
 
-/* ---------- 경제적 해자 배지 ---------- */
-.moat-wide   { background:#0f766e; color:#fff; }
-.moat-narrow { background:#5eead4; color:#134e4a; }
-.moat-none   { background:#e2e8f0; color:#64748b; }
-.moat-quant  { background:transparent; color:#64748b;
-               border:1px dashed #cbd5e1; }
-.moat-na     { color:#cbd5e1; }
+/* ---------- 경제적 해자 ---------- */
+.moat-wide    { background:#0f766e; color:#fff; }
+.moat-narrow  { background:#5eead4; color:#134e4a; }
+.moat-none    { background:#e2e8f0; color:#64748b; }
+.moat-unrated { color:#b6bccd; font-size:11.5px; font-weight:500;
+                cursor:help; }
+.moat-na      { color:#cbd5e1; }
