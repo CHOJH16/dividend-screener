@@ -45,13 +45,13 @@ select:focus,input:focus{outline:2px solid rgba(79,70,229,.25);border-color:var(
 .ghost:hover{border-color:var(--pri);color:var(--pri)}
 
 .tbl-wrap{overflow-x:auto;margin:-18px;padding:0}
-table{width:100%;border-collapse:collapse;min-width:920px}
+table{width:100%;border-collapse:collapse;min-width:820px}
 th,td{padding:12px 14px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap}
 th{font-size:12px;color:var(--sub);font-weight:700;background:#fbfbfe;position:sticky;top:0;z-index:2}
 th.s{cursor:pointer;user-select:none} th.s:hover{color:var(--pri)}
 th.r,td.r{text-align:right} th.c,td.c{text-align:center}
 th.on{color:var(--pri)} th.on::after{content:" ▾"} th.on.asc::after{content:" ▴"}
-.w-band{min-width:210px}
+.w-band{min-width:130px}
 tbody tr{cursor:pointer} tbody tr:hover{background:#f8f8ff}
 .nm{font-weight:700} .tk{color:var(--sub);font-size:12px;margin-left:6px}
 .tag{display:inline-block;font-size:10px;font-weight:700;padding:1px 5px;border-radius:4px;
