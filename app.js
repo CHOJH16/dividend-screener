@@ -8,13 +8,17 @@ const BAND = {
   "2":  { label: "매우 저평가", cls: "b-2"  },
 };
 
-/* 이력이 이 값보다 짧으면 종목명 옆에 회색 딱지를 붙인다 */
+const MOAT = {
+  Wide:   { label: "넓음", cls: "moat-wide",   rank: 3 },
+  Narrow: { label: "좁음", cls: "moat-narrow", rank: 2 },
+  None:   { label: "없음", cls: "moat-none",   rank: 1 },
+};
+
 const FULL_HISTORY = 9.5;
 
-/* 기본 필터값 — 여기만 고치면 화면도 자동으로 따라간다 */
 const DEFAULTS = {
   idx: ["SP500", "NDX100"], streak: 10, minY: 0,
-  band: "all", q: "", trap: true,
+  band: "all", moat: "all", q: "", trap: true,
   sort: "pct", dir: -1,
 };
 
@@ -31,6 +35,7 @@ function syncControls() {
   $("#f-streak").value = String(S.streak);
   $("#f-miny").value   = String(S.minY);
   $("#f-band").value   = S.band;
+  $("#f-moat").value   = S.moat;
   $("#f-q").value      = S.q;
   $("#f-trap").checked = S.trap;
   document.querySelectorAll("#f-idx .chip").forEach((x) =>
@@ -39,6 +44,7 @@ function syncControls() {
   if ($("#f-streak").value === "") { S.streak = 0;     $("#f-streak").value = "0"; }
   if ($("#f-miny").value   === "") { S.minY   = 0;     $("#f-miny").value   = "0"; }
   if ($("#f-band").value   === "") { S.band   = "all"; $("#f-band").value   = "all"; }
+  if ($("#f-moat").value   === "") { S.moat   = "all"; $("#f-moat").value   = "all"; }
 }
 
 /* ---------------------------------------------------- 데이터 주소 후보 */
@@ -80,12 +86,12 @@ function getJSON(url) {
 function showError(title, detail) {
   $("#updated").textContent = title;
   $("#tbody").innerHTML =
-    '<tr><td colspan="7" class="empty">' + title +
+    '<tr><td colspan="8" class="empty">' + title +
     '<br><small style="opacity:.7">' + String(detail || "").slice(0, 200) + "</small><br><br>" +
     '<button type="button" id="btn-retry" class="ghost">다시 시도</button></td></tr>';
   const b = $("#btn-retry");
   if (b) b.onclick = () => {
-    $("#tbody").innerHTML = '<tr><td colspan="7" class="empty">다시 불러오는 중입니다…</td></tr>';
+    $("#tbody").innerHTML = '<tr><td colspan="8" class="empty">다시 불러오는 중입니다…</td></tr>';
     load();
   };
 }
@@ -127,6 +133,27 @@ async function load() {
   }
 }
 
+/* ---------------------------------------------------- 해자 표시 */
+function moatRank(d) {
+  if (d.moat && MOAT[d.moat]) return MOAT[d.moat].rank;
+  if (d.qmoat != null) return d.qmoat >= 0.7 ? 2.5 : d.qmoat >= 0.3 ? 1.5 : 0.5;
+  return 0;
+}
+
+function moatCell(d) {
+  const m = MOAT[d.moat];
+  if (m) {
+    const star = d.star ? ` <small class="star" title="모닝스타 별점">${"★".repeat(+d.star)}</small>` : "";
+    return `<span class="badge ${m.cls}">${m.label}</span>${star}`;
+  }
+  if (d.qmoat != null) {
+    const q = Number(d.qmoat);
+    const lab = q >= 0.7 ? "넓음" : q >= 0.3 ? "좁음" : "없음";
+    return `<span class="badge moat-quant" title="애널리스트 등급이 없어 모닝스타 퀀트 모델 값(${q.toFixed(2)})으로 추정한 값입니다">${lab}?</span>`;
+  }
+  return '<span class="moat-na">-</span>';
+}
+
 /* ---------------------------------------------------- 필터 + 정렬 */
 function view() {
   const q = S.q.trim().toLowerCase();
@@ -142,6 +169,9 @@ function view() {
     if (S.band === "cheap" && d.pct < 70) return false;
     if (S.band === "verycheap" && d.pct < 90) return false;
     if (S.band === "notrich" && d.pct < 30) return false;
+    if (S.moat === "wide" && d.moat !== "Wide") return false;
+    if (S.moat === "wn" && !(d.moat === "Wide" || d.moat === "Narrow")) return false;
+    if (S.moat === "rated" && !d.moat) return false;
     if (q && !((d.sym || "").toLowerCase().includes(q) ||
                (d.name || "").toLowerCase().includes(q) ||
                (d.sec || "").toLowerCase().includes(q))) return false;
@@ -150,6 +180,7 @@ function view() {
 
   const k = S.sort;
   rows.sort((a, b) => {
+    if (k === "moat") return (moatRank(a) - moatRank(b)) * S.dir;
     const x = a[k], y = b[k];
     if (typeof x === "string") return String(x).localeCompare(String(y)) * S.dir;
     return ((x || 0) - (y || 0)) * S.dir;
@@ -169,7 +200,7 @@ function render() {
 
   if (!rows.length) {
     $("#tbody").innerHTML =
-      '<tr><td colspan="7" class="empty">조건에 맞는 종목이 없습니다. 필터를 완화해 보세요.</td></tr>';
+      '<tr><td colspan="8" class="empty">조건에 맞는 종목이 없습니다. 필터를 완화해 보세요.</td></tr>';
     return;
   }
 
@@ -197,6 +228,7 @@ function render() {
         </div>
       </td>
       <td class="r">${d.streak}년</td>
+      <td class="c">${moatCell(d)}</td>
       <td>${d.sec}</td>
     </tr>`;
   }).join("");
@@ -212,8 +244,17 @@ function openModal(sym) {
   if (!d) return;
   const b = BAND[String(d.band)] || BAND["0"];
 
+  let moatTxt = "해자 정보 없음";
+  if (d.moat && MOAT[d.moat]) {
+    moatTxt = "해자 " + MOAT[d.moat].label;
+    if (d.star) moatTxt += " · 별점 " + d.star;
+  } else if (d.qmoat != null) {
+    moatTxt = `해자 추정 ${Number(d.qmoat).toFixed(2)} (퀀트)`;
+  }
+
   $("#m-name").textContent = d.name;
-  $("#m-sym").textContent = `${d.sym} · ${d.sec} · 배당 증가(유지) ${d.streak}년 · 밴드 계산 기간 ${d.yrs}년`;
+  $("#m-sym").textContent =
+    `${d.sym} · ${d.sec} · 배당 증가(유지) ${d.streak}년 · 밴드 계산 기간 ${d.yrs}년 · ${moatTxt}`;
   $("#m-badge").textContent = b.label;
   $("#m-badge").className = "badge " + b.cls;
   $("#m-px").textContent = fmtP(d.px);
@@ -252,6 +293,7 @@ document.querySelectorAll("#f-idx .chip").forEach((c) => {
 $("#f-streak").onchange = (e) => { S.streak = +e.target.value; render(); };
 $("#f-miny").onchange   = (e) => { S.minY   = +e.target.value; render(); };
 $("#f-band").onchange   = (e) => { S.band   = e.target.value;  render(); };
+$("#f-moat").onchange   = (e) => { S.moat   = e.target.value;  render(); };
 $("#f-trap").onchange   = (e) => { S.trap   = e.target.checked; render(); };
 
 let t = null;
@@ -277,9 +319,12 @@ $("#btn-reset").onclick = () => {
 
 $("#btn-csv").onclick = () => {
   const rows = view();
-  const head = ["티커", "종목명", "주가", "현재배당수익률", "10년중앙", "백분위", "밴드", "배당증가유지기간", "밴드계산기간", "섹터"];
+  const head = ["티커", "종목명", "주가", "현재배당수익률", "10년중앙", "백분위", "밴드",
+                "배당증가유지기간", "해자", "퀀트해자", "별점", "밴드계산기간", "섹터"];
   const body = rows.map((d) => [d.sym, `"${d.name}"`, d.px, d.y, d.y50,
-    d.pct, (BAND[String(d.band)] || BAND["0"]).label, d.streak, d.yrs, `"${d.sec}"`].join(","));
+    d.pct, (BAND[String(d.band)] || BAND["0"]).label, d.streak,
+    d.moat || "", d.qmoat != null ? d.qmoat : "", d.star || "",
+    d.yrs, `"${d.sec}"`].join(","));
   const blob = new Blob(["\uFEFF" + [head.join(","), ...body].join("\n")],
     { type: "text/csv;charset=utf-8" });
   const a = document.createElement("a");
