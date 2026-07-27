@@ -45,13 +45,13 @@ select:focus,input:focus{outline:2px solid rgba(79,70,229,.25);border-color:var(
 .ghost:hover{border-color:var(--pri);color:var(--pri)}
 
 .tbl-wrap{overflow-x:auto;margin:-18px;padding:0}
-table{width:100%;border-collapse:collapse;min-width:820px}
-th,td{padding:12px 14px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap}
+table{width:100%;border-collapse:collapse;min-width:760px}
+th,td{padding:12px 11px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap}
 th{font-size:12px;color:var(--sub);font-weight:700;background:#fbfbfe;position:sticky;top:0;z-index:2}
 th.s{cursor:pointer;user-select:none} th.s:hover{color:var(--pri)}
 th.r,td.r{text-align:right} th.c,td.c{text-align:center}
 th.on{color:var(--pri)} th.on::after{content:" ▾"} th.on.asc::after{content:" ▴"}
-.w-band{min-width:130px}
+.w-band{min-width:126px}
 tbody tr{cursor:pointer} tbody tr:hover{background:#f8f8ff}
 .nm{font-weight:700} .tk{color:var(--sub);font-size:12px;margin-left:6px}
 .tag{display:inline-block;font-size:10px;font-weight:700;padding:1px 5px;border-radius:4px;
@@ -59,11 +59,7 @@ tbody tr{cursor:pointer} tbody tr:hover{background:#f8f8ff}
 .big{font-weight:800;font-size:14.5px}
 .empty{text-align:center;color:var(--sub);padding:44px 0}
 
-.cellbar{display:flex;align-items:center;gap:9px;justify-content:center}
-.mini{position:relative;width:110px;height:7px;border-radius:99px;
-  background:linear-gradient(90deg,var(--red),var(--amb),var(--grn))}
-.mini i{position:absolute;top:-3px;width:3px;height:13px;background:#20243a;
-  border-radius:2px;transform:translateX(-50%);box-shadow:0 0 0 2px #fff}
+.cellbar{display:flex;align-items:center;gap:8px;justify-content:center}
 .pnum{font-size:12px;font-weight:800;color:var(--sub);width:34px;text-align:right}
 .badge{font-size:11px;font-weight:800;padding:3px 8px;border-radius:99px;white-space:nowrap}
 .b--2{background:#fde8e8;color:#c0392b} .b--1{background:#fdf1e3;color:#c17d1a}
@@ -111,6 +107,7 @@ tbody tr{cursor:pointer} tbody tr:hover{background:#f8f8ff}
   .hd h1{font-size:17px} .card{padding:14px} .tbl-wrap{margin:-14px}
   .m-kpi{grid-template-columns:1fr}
 }
+
 /* ---------- 경제적 해자 배지 ---------- */
 .moat-wide   { background:#0f766e; color:#fff; }
 .moat-narrow { background:#5eead4; color:#134e4a; }
@@ -118,4 +115,3 @@ tbody tr{cursor:pointer} tbody tr:hover{background:#f8f8ff}
 .moat-quant  { background:transparent; color:#64748b;
                border:1px dashed #cbd5e1; }
 .moat-na     { color:#cbd5e1; }
-.star        { color:#f59e0b; font-size:11px; letter-spacing:-1px; }
