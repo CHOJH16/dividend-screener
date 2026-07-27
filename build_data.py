@@ -1,43 +1,34 @@
 # -*- coding: utf-8 -*-
 """
 S&P 500 + 나스닥 100 + 대표 배당 ETF의
-10년 배당수익률 밴드 데이터를 만들어 data/screener_us.json 으로 저장한다.
-
-- 배당수익률은 '날짜 창(365일) 합산'이 아니라
-  '배당 주기 기반 연환산(직전 freq회 합산)' 방식으로 계산한다.
-- 연환산 준비 구간(첫 freq회를 채우는 기간)을 버리고도 온전한 10년이 남도록
-  실제로는 12년치를 내려받는다.
+10년 배당수익률 밴드 + 모닝스타 해자 등급 데이터를 만들어
+data/screener_us.json 으로 저장한다.
 """
 
-import io
-import os
-import json
-import time
-import datetime as dt
-
-import numpy as np
-import pandas as pd
-import requests
-import yfinance as yf
+import io, os, json, time, datetime as dt
+import numpy as np, pandas as pd, requests, yfinance as yf
 
 # ----------------------------------------------------------- 설정값
-HISTORY_YEARS   = 10      # 밴드 계산에 쓸 기간
-FETCH_YEARS     = 12      # 실제로 내려받을 기간 (준비 구간 여유분 포함)
-MIN_YEARS       = 3       # 배당 이력이 이보다 짧으면 제외
-FLAT_TOLERANCE  = 0.02    # 2% 이내 감소는 '유지'로 인정 (반올림 오차 흡수)
-SPECIAL_DIV_CAP = 2.0     # 직전 3년 중앙값의 2배 초과분은 특별배당으로 보고 잘라냄
-STALE_FACTOR    = 1.8     # 정상 주기의 1.8배가 지나도록 배당이 없으면 중단으로 간주
-MAX_YIELD       = 40.0    # 이보다 높은 수익률은 데이터 오류로 보고 제외
-CHUNK           = 25      # 한 번에 받아올 종목 수
-SLEEP           = 2.0     # 묶음 사이 쉬는 시간(초) — 야후 차단 방지
+HISTORY_YEARS   = 10
+FETCH_YEARS     = 12
+MIN_YEARS       = 3
+FLAT_TOLERANCE  = 0.02
+SPECIAL_DIV_CAP = 2.0
+STALE_FACTOR    = 1.8
+MAX_YIELD       = 40.0
+CHUNK           = 25
+SLEEP           = 2.0
 
 START_DATE = (dt.date.today() - dt.timedelta(days=int(365.25 * FETCH_YEARS))).isoformat()
 
 UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
 
+# 모닝스타 해자 등급 (영국 사이트의 공개 스크리너 엔드포인트)
+MS_URL = "https://tools.morningstar.co.uk/api/rest.svc/klr5zyak8x/security/screener"
+MS_UNIVERSE = "E0EXG$XNYS|E0EXG$XNAS|E0EXG$XASE"
+
 # ----------------------------------------------------------- 섹터 한글 이름
 SECTOR_KO = {
-    # GICS (위키피디아 / S&P 목록 기준)
     "Information Technology": "정보기술",
     "Health Care":            "헬스케어",
     "Financials":             "금융",
@@ -49,7 +40,6 @@ SECTOR_KO = {
     "Utilities":              "유틸리티",
     "Real Estate":            "부동산",
     "Materials":              "소재",
-    # Yahoo Finance 표기
     "Technology":             "정보기술",
     "Healthcare":             "헬스케어",
     "Financial Services":     "금융",
@@ -61,7 +51,6 @@ SECTOR_KO = {
     "ETF":                    "ETF",
 }
 
-
 def ko_sector(name):
     if not name:
         return "기타"
@@ -69,7 +58,6 @@ def ko_sector(name):
     if s in ("", "-", "nan", "None"):
         return "기타"
     return SECTOR_KO.get(s, s)
-
 
 # ----------------------------------------------------------- 배당 ETF 목록
 DIVIDEND_ETFS = {
@@ -93,7 +81,6 @@ DIVIDEND_ETFS = {
     "SCHY": "Schwab International Dividend Equity",
 }
 
-# 나스닥100 목록을 못 가져올 때만 쓰는 비상용 목록
 NDX_FALLBACK = """
 AAPL ABNB ADBE ADI ADP ADSK AEP AMAT AMD AMGN AMZN APP ARM ASML AVGO AXON AZN
 BIIB BKNG BKR CCEP CDNS CDW CEG CHTR CMCSA COST CPRT CRWD CSCO CSGP CSX CTAS
@@ -104,13 +91,11 @@ QCOM REGN ROP ROST SBUX SNPS TEAM TMUS TSLA TTD TTWO TXN VRSK VRTX WBD WDAY
 XEL ZS
 """.split()
 
-
 # ----------------------------------------------------------- 종목 목록
 def read_html_ua(url):
     r = requests.get(url, headers=UA, timeout=30)
     r.raise_for_status()
     return pd.read_html(io.StringIO(r.text))
-
 
 def get_sp500():
     urls = [
@@ -138,7 +123,6 @@ def get_sp500():
                 return out
         except Exception as e:
             print("[S&P500] 실패:", e)
-
     try:
         for tb in read_html_ua("https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"):
             cols = [str(c) for c in tb.columns]
@@ -152,9 +136,7 @@ def get_sp500():
                 return out
     except Exception as e:
         print("[S&P500] 위키피디아도 실패:", e)
-
     return {}
-
 
 def get_ndx100():
     try:
@@ -175,7 +157,6 @@ def get_ndx100():
     print(f"[NDX100] 비상 목록 사용 ({len(NDX_FALLBACK)}개)")
     return set(NDX_FALLBACK)
 
-
 def build_universe():
     uni = {}
     for t, (nm, se) in get_sp500().items():
@@ -190,6 +171,64 @@ def build_universe():
     print(f"[유니버스] 총 {len(uni)}종목")
     return uni
 
+# ----------------------------------------------------------- 모닝스타 해자 등급
+def fetch_moat_map():
+    """티커 -> {moat, qmoat, star} 사전. 실패하면 빈 사전을 돌려준다."""
+    out, page = {}, 1
+    while page <= 12:
+        try:
+            r = requests.get(MS_URL, params={
+                "page": page, "pageSize": 1000, "outputType": "json", "version": 1,
+                "languageId": "en-GB", "currencyId": "USD",
+                "universeIds": MS_UNIVERSE,
+                "securityDataPoints": "Ticker|EconomicMoat|QuantitativeMoat|StarRating",
+                "sortOrder": "Ticker asc",
+            }, headers=UA, timeout=40)
+            r.raise_for_status()
+            j = r.json()
+        except Exception as e:
+            print(f"[해자] {page}페이지 실패:", e)
+            break
+
+        rows = j.get("rows", [])
+        if not rows:
+            break
+        for row in rows:
+            t = row.get("Ticker")
+            if not t:
+                continue
+            out[t] = {
+                "moat":  row.get("EconomicMoat"),
+                "qmoat": row.get("QuantitativeMoat"),
+                "star":  row.get("StarRating"),
+            }
+        total = j.get("total", 0)
+        print(f"  해자 {page}페이지 · 누적 {len(out)} / {total}")
+        if page * 1000 >= total:
+            break
+        page += 1
+        time.sleep(1.0)
+
+    print(f"[해자] 총 {len(out)}종목 확보")
+    return out
+
+def lookup_moat(sym, moat_map):
+    """야후는 BF-B, 모닝스타는 BF.B 처럼 표기가 다를 수 있어 몇 가지로 시도한다."""
+    for key in (sym, sym.replace("-", "."), sym.replace(".", "-")):
+        if key in moat_map:
+            return moat_map[key]
+    return {}
+
+def load_prev_moat():
+    """해자 수집이 실패했을 때 쓸 직전 결과."""
+    try:
+        with open("data/screener_us.json", encoding="utf-8") as f:
+            old = json.load(f)
+        return {x["sym"]: {"moat": x.get("moat"), "qmoat": x.get("qmoat"),
+                           "star": x.get("star")}
+                for x in old.get("items", []) if x.get("moat") or x.get("qmoat")}
+    except Exception:
+        return {}
 
 # ----------------------------------------------------------- 데이터 수집
 def to_naive(idx):
@@ -197,7 +236,6 @@ def to_naive(idx):
     if getattr(idx, "tz", None) is not None:
         idx = idx.tz_localize(None)
     return idx
-
 
 def fetch_all(tickers):
     frames, missing = {}, []
@@ -224,7 +262,6 @@ def fetch_all(tickers):
             except Exception:
                 missing.append(t)
         time.sleep(SLEEP)
-
     for rnd in range(2):
         if not missing:
             break
@@ -242,70 +279,53 @@ def fetch_all(tickers):
                 again.append(t)
             time.sleep(1.2)
         missing = again
-
     if missing:
         print("[수집 실패 목록]", " ".join(sorted(missing)))
     print(f"[수집] 성공 {len(frames)}종목 / 실패 {len(missing)}종목")
     return frames
 
-
 # ----------------------------------------------------------- 배당 주기 · 연환산
 def detect_freq(dv):
-    """배당 지급 주기(연간 횟수)를 추정한다. 1, 2, 4, 12 중 하나."""
     d = dv[dv.index >= dv.index[-1] - pd.Timedelta(days=1100)]
     if len(d) < 3:
         d = dv
     if len(d) < 2:
         return 1
     gaps = d.index.to_series().diff().dt.days.dropna()
-    gaps = gaps[gaps > 3]                      # 같은 시기 중복 지급 제거
+    gaps = gaps[gaps > 3]
     if gaps.empty:
         return 1
     g = float(gaps.median())
     return min([1, 2, 4, 12], key=lambda f: abs(g - 365.25 / f))
 
-
 def annualized(dv, idx, freq):
-    """각 시점의 연환산 배당금 = 그 시점까지의 '직전 freq회' 배당 합.
-
-    날짜 창 방식과 달리 배당락일이 하루이틀 밀려도 횟수가 더 잡히지 않는다.
-    배당이 정상 주기보다 오래 끊기면 0으로 떨어뜨린다.
-    """
     rolled = dv.rolling(freq, min_periods=freq).sum()
     a = rolled.reindex(idx, method="ffill")
-
     last = pd.Series(dv.index, index=dv.index).reindex(idx, method="ffill")
     gap = (pd.Series(idx, index=idx) - last).dt.days
     stale = gap > (365.25 / freq) * STALE_FACTOR
-
     return a.where(~stale, 0.0).fillna(0.0)
-
 
 # ----------------------------------------------------------- 배당 증가(유지) 기간
 def dividend_streak(dv, today):
-    """동결도 유지로 인정. 감액이 나오는 순간 끊긴다."""
     if dv.empty:
         return 0
-
     yr_sum = dv.groupby(dv.index.year).sum()
     yr_cnt = dv.groupby(dv.index.year).size()
-    yr_sum = yr_sum[yr_sum.index < today.year]     # 진행 중인 올해는 제외
+    yr_sum = yr_sum[yr_sum.index < today.year]
     yr_cnt = yr_cnt[yr_cnt.index < today.year]
     if len(yr_sum) < 2:
         return 0
-    if int(max(yr_sum.index)) < today.year - 1:    # 최근에 배당이 끊긴 종목
+    if int(max(yr_sum.index)) < today.year - 1:
         return 0
-
     pos = yr_cnt[yr_cnt > 0]
     modal = int(pos.median()) if not pos.empty else 0
-
     norm = {}
     for y in yr_sum.index:
         s, c = float(yr_sum[y]), int(yr_cnt[y])
         if modal > 0 and c > 0 and c != modal:
-            s = s / c * modal                      # 지급 횟수 어긋남 보정
+            s = s / c * modal
         norm[int(y)] = s
-
     asc = sorted(norm)
     capped = {}
     for i, y in enumerate(asc):
@@ -314,7 +334,6 @@ def dividend_streak(dv, today):
         if len(prev) >= 2:
             v = min(v, float(np.median(prev)) * SPECIAL_DIV_CAP)
         capped[y] = v
-
     desc = sorted(capped, reverse=True)
     run = 0
     for a, b in zip(desc, desc[1:]):
@@ -325,32 +344,25 @@ def dividend_streak(dv, today):
         run += 1
     return run + 1 if run > 0 else 1
 
-
 # ----------------------------------------------------------- 종목 분석
-BANDS = [(10, "매우 고평가", -2), (30, "고평가", -1),
-         (70, "중립", 0), (90, "저평가", 1), (101, "매우 저평가", 2)]
-
+BANDS = [(10, "매우 고평가", -2), (30, "고평가", -1), (70, "중립", 0),
+         (90, "저평가", 1), (101, "매우 저평가", 2)]
 
 def analyze(sym, meta, df, today):
     if df is None or df.empty or "Close" not in df or "Dividends" not in df:
         return None
-
     px = pd.to_numeric(df["Close"], errors="coerce").dropna()
     dv = pd.to_numeric(df["Dividends"], errors="coerce").fillna(0.0)
     px.index, dv.index = to_naive(px.index), to_naive(dv.index)
-
     dv = dv[dv > 0]
-    dv = dv.groupby(dv.index).sum().sort_index()   # 같은 날 중복 합치기
+    dv = dv.groupby(dv.index).sum().sort_index()
     px = px.groupby(px.index).last().sort_index()
     if len(px) < 250 or dv.empty:
         return None
-
     idx = px.index.union(dv.index).sort_values()
     p = px.reindex(idx).ffill()
-
     freq = detect_freq(dv)
     ann = annualized(dv, idx, freq)
-
     y = (ann / p * 100.0).replace([np.inf, -np.inf], np.nan).dropna()
     y = y[(y > 0) & (y < MAX_YIELD)]
     if y.empty:
@@ -359,7 +371,6 @@ def analyze(sym, meta, df, today):
     yw = y.resample("W").last().dropna()
     if len(yw) < MIN_YEARS * 52:
         return None
-
     cur_p = float(p.iloc[-1])
     cur_ann = float(ann.iloc[-1])
     if cur_p <= 0 or cur_ann <= 0:
@@ -367,12 +378,9 @@ def analyze(sym, meta, df, today):
     cur_y = cur_ann / cur_p * 100.0
     if cur_y <= 0 or cur_y >= MAX_YIELD:
         return None
-
     pct = float((yw < cur_y).mean() * 100.0)
     label, band = next((l, b) for th, l, b in BANDS if pct < th)
-
     yrs = min((yw.index[-1] - yw.index[0]).days / 365.25, float(HISTORY_YEARS))
-
     return {
         "sym": sym,
         "name": meta["name"],
@@ -395,7 +403,6 @@ def analyze(sym, meta, df, today):
         "yrs": round(yrs, 1),
     }
 
-
 # ----------------------------------------------------------- 실행
 def main():
     today = dt.date.today()
@@ -403,8 +410,18 @@ def main():
     if len(uni) < 200:
         raise SystemExit("종목 목록을 가져오지 못했습니다. 잠시 후 다시 실행하세요.")
 
-    frames = fetch_all(sorted(uni))
+    # 해자 등급을 먼저 받아둔다. 실패해도 빌드는 계속한다.
+    prev_moat = load_prev_moat()
+    try:
+        moat_map = fetch_moat_map()
+    except Exception as e:
+        print("[해자] 전체 실패:", e)
+        moat_map = {}
+    if len(moat_map) < 1000:
+        print(f"[해자] 결과가 부족합니다({len(moat_map)}개). 직전 데이터를 사용합니다.")
+        moat_map = {}
 
+    frames = fetch_all(sorted(uni))
     items = []
     for t in sorted(frames):
         try:
@@ -415,7 +432,8 @@ def main():
         if r:
             items.append(r)
 
-    # 섹터가 비어 있는 종목만 개별 조회 후, 전부 한글로 변환
+    # 섹터 한글화 + 해자 등급 결합
+    n_moat = 0
     for it in items:
         if str(it["sec"]).strip() in ("", "-", "nan", "None"):
             try:
@@ -426,21 +444,31 @@ def main():
             time.sleep(0.4)
         it["sec"] = ko_sector(it["sec"])
 
+        info = lookup_moat(it["sym"], moat_map) if moat_map else prev_moat.get(it["sym"], {})
+        it["moat"]  = info.get("moat")
+        it["qmoat"] = info.get("qmoat")
+        it["star"]  = info.get("star")
+        if it["moat"]:
+            n_moat += 1
+
     if len(items) < 100:
         raise SystemExit(f"수집 결과가 너무 적습니다({len(items)}개). 다시 실행하세요.")
 
-    # 검증용 출력
     short = sum(1 for x in items if x["yrs"] < 9.5)
-    print(f"[점검] 이력 10년 미만 종목: {short}개 / 전체 {len(items)}개")
-    for chk in ("PFE", "MKC", "MCK", "KO", "MMM", "SCHD", "JEPQ"):
+    wide = sum(1 for x in items if x.get("moat") == "Wide")
+    narrow = sum(1 for x in items if x.get("moat") == "Narrow")
+    none_ = sum(1 for x in items if x.get("moat") == "None")
+    print(f"[점검] 이력 10년 미만: {short}개 / 전체 {len(items)}개")
+    print(f"[해자] 등급 있음 {n_moat}개 · 넓음 {wide} · 좁음 {narrow} · 없음 {none_}")
+
+    for chk in ("AAPL", "PFE", "KO", "BF-B", "MRSH", "SCHD", "JEPQ"):
         hit = next((x for x in items if x["sym"] == chk), None)
         if hit:
-            print(f"[확인] {chk} {hit['name']} · {hit['sec']} · 연 {hit['freq']}회 · "
-                  f"배당 {hit['ttm']} · 수익률 {hit['y']}% · 백분위 {hit['pct']} · "
-                  f"유지 {hit['streak']}년 · 이력 {hit['yrs']}년")
+            print(f"[확인] {chk} {hit['name']} · {hit['sec']} · 수익률 {hit['y']}% · "
+                  f"백분위 {hit['pct']} · 유지 {hit['streak']}년 · "
+                  f"해자 {hit.get('moat') or '-'} (퀀트 {hit.get('qmoat')})")
         else:
-            print(f"[확인] {chk} → 결과에 없음 "
-                  f"(유니버스 포함 여부: {'예' if chk in uni else '아니오'})")
+            print(f"[확인] {chk} → 결과에 없음")
 
     items.sort(key=lambda x: -x["pct"])
     os.makedirs("data", exist_ok=True)
@@ -454,7 +482,6 @@ def main():
     with open("data/screener_us.json", "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, separators=(",", ":"))
     print(f"[완료] {len(items)}종목 저장")
-
 
 if __name__ == "__main__":
     main()
