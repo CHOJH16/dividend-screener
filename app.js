@@ -140,10 +140,24 @@ function moatRank(d) {
   return 0;
 }
 
+function starTitle(n) {
+  const t = {
+    5: "적정주가 대비 크게 저평가",
+    4: "적정주가 대비 저평가",
+    3: "적정주가 수준",
+    2: "적정주가 대비 고평가",
+    1: "적정주가 대비 크게 고평가",
+  };
+  return `모닝스타 별점 ${n}점 · ${t[n] || "-"} (해자 등급과는 별개인 밸류에이션 평가입니다)`;
+}
+
 function moatCell(d) {
   const m = MOAT[d.moat];
   if (m) {
-    const star = d.star ? ` <small class="star" title="모닝스타 별점">${"★".repeat(+d.star)}</small>` : "";
+    const n = +d.star;
+    const star = n
+      ? ` <small class="star" title="${starTitle(n)}">${"★".repeat(n)}</small>`
+      : "";
     return `<span class="badge ${m.cls}">${m.label}</span>${star}`;
   }
   if (d.qmoat != null) {
@@ -222,7 +236,6 @@ function render() {
       <td class="r">${fmtY(d.y50)}</td>
       <td class="c">
         <div class="cellbar">
-          <div class="mini"><i style="left:${d.pct}%"></i></div>
           <span class="pnum">${Math.round(d.pct)}%</span>
           <span class="badge ${b.cls}">${b.label}</span>
         </div>
@@ -247,7 +260,7 @@ function openModal(sym) {
   let moatTxt = "해자 정보 없음";
   if (d.moat && MOAT[d.moat]) {
     moatTxt = "해자 " + MOAT[d.moat].label;
-    if (d.star) moatTxt += " · 별점 " + d.star;
+    if (d.star) moatTxt += " · 별점 " + d.star + "점(밸류에이션)";
   } else if (d.qmoat != null) {
     moatTxt = `해자 추정 ${Number(d.qmoat).toFixed(2)} (퀀트)`;
   }
