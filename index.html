@@ -4,9 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>미국 배당주 스크리너 · 10년 배당수익률 밴드</title>
-<meta name="description" content="S&P 500, 나스닥 100, 대표 배당 ETF를 10년 배당수익률 밴드로 스크리닝합니다.">
-<link rel="stylesheet" href="./style.css?v=5">
-<script src="./app.js?v=5" defer></script>
+<meta name="description" content="S&P 500, 나스닥 100, 대표 배당 ETF를 10년 배당수익률 밴드와 모닝스타 해자 등급으로 스크리닝합니다.">
+<link rel="stylesheet" href="./style.css?v=6">
+<script src="./app.js?v=6" defer></script>
 </head>
 <body>
 
@@ -16,7 +16,7 @@
       <div class="brand-ico">🔎</div>
       <div>
         <h1>미국 배당주 스크리너</h1>
-        <p>S&amp;P 500 · 나스닥 100 · 대표 배당 ETF를 10년 배당수익률 밴드로 검색합니다.</p>
+        <p>S&amp;P 500 · 나스닥 100 · 대표 배당 ETF를 10년 배당수익률 밴드와 해자 등급으로 검색합니다.</p>
       </div>
     </div>
     <div class="updated">데이터 기준 <b id="updated">불러오는 중…</b></div>
@@ -72,6 +72,16 @@
       </div>
 
       <div class="f">
+        <label for="f-moat">경제적 해자</label>
+        <select id="f-moat">
+          <option value="all">전체</option>
+          <option value="wide">넓음만</option>
+          <option value="wn">넓음 + 좁음</option>
+          <option value="rated">등급 있는 종목만</option>
+        </select>
+      </div>
+
+      <div class="f">
         <label for="f-q">종목 검색</label>
         <input id="f-q" type="search" placeholder="AAPL, Apple, Utilities…" autocomplete="off">
       </div>
@@ -102,11 +112,12 @@
             <th class="s r" data-key="y50">10년 중앙 배당수익률</th>
             <th class="s c w-band" data-key="pct">현재 배당수익률 위치</th>
             <th class="s r" data-key="streak">배당 증가(유지) 기간</th>
+            <th class="s c" data-key="moat">해자</th>
             <th class="s" data-key="sec">섹터</th>
           </tr>
         </thead>
         <tbody id="tbody">
-          <tr><td colspan="7" class="empty">데이터를 불러오는 중입니다…</td></tr>
+          <tr><td colspan="8" class="empty">데이터를 불러오는 중입니다…</td></tr>
         </tbody>
       </table>
     </div>
@@ -114,16 +125,19 @@
 
   <section class="notice">
     <b>투자 참고사항</b>
+    <p><b>경제적 해자</b>는 모닝스타가 평가한 기업의 구조적 경쟁우위입니다.
+       넓음은 20년 이상, 좁음은 10년 이상 초과수익을 유지할 것으로 본다는 뜻입니다.
+       <b>넓음?</b>처럼 물음표가 붙은 것은 애널리스트 등급이 없어 모닝스타 퀀트 모델 값으로
+       추정한 것이니 참고용으로만 보세요. ETF는 개별 기업이 아니라 등급이 없습니다.</p>
     <p>종목명 옆의 <b>이력 6.2년</b> 같은 회색 딱지는 배당 데이터가 10년보다 짧다는 표시입니다.
-       이런 종목의 백분위는 짧은 기간 안에서의 위치라 밴드 신뢰도가 낮습니다.
-       배당 증가(유지) 기간을 10년 이상으로 두면 대부분 자동으로 걸러집니다.</p>
+       이런 종목의 백분위는 짧은 기간 안에서의 위치라 밴드 신뢰도가 낮습니다.</p>
     <p>배당수익률이 높다고 반드시 저평가된 것은 아닙니다. 주가 급락이나 향후 배당 삭감 가능성 때문에
        배당수익률이 높아질 수도 있습니다. 지수 편입 종목만 다루므로 배당을 삭감해 지수에서 제외된
        기업은 애초에 목록에 없다는 점(생존 편향)도 감안하세요.</p>
     <p>커버드콜 ETF(JEPI·JEPQ·DIVO 등)의 분배금은 옵션 프리미엄에 연동돼 매월 변동하므로
        배당 증가(유지) 기간이 짧게 나오는 것이 정상입니다.</p>
-    <p>본 서비스는 투자 참고용이며 투자 권유가 아닙니다. 데이터는 Yahoo Finance 공개 자료 기반이며
-       오류가 있을 수 있으니 실제 투자 전 원문을 확인하세요.</p>
+    <p>본 서비스는 투자 참고용이며 투자 권유가 아닙니다. 데이터는 Yahoo Finance 및 Morningstar
+       공개 자료 기반이며 오류가 있을 수 있으니 실제 투자 전 원문을 확인하세요.</p>
   </section>
 </main>
 
@@ -168,6 +182,6 @@
   </div>
 </div>
 
-<footer class="ft"><div class="wrap">데이터 출처 Yahoo Finance · 매 평일 자동 갱신</div></footer>
+<footer class="ft"><div class="wrap">데이터 출처 Yahoo Finance · Morningstar 공개 데이터 · 매 평일 자동 갱신</div></footer>
 </body>
 </html>
