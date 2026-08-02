@@ -117,11 +117,3 @@ tbody tr{cursor:pointer} tbody tr:hover{background:#f8f8ff}
 .moat-unrated { color:#b6bccd; font-size:11.5px; font-weight:500;
                 cursor:help; }
 .moat-na      { color:#cbd5e1; }
-
-/* ---------- PER 열 추가에 따른 조정 ---------- */
-table{min-width:1080px}
-.m-sec-title{font-weight:800;font-size:13px;color:var(--txt);margin:0 0 10px}
-.m-pe{margin-top:20px;padding-top:18px;border-top:1px solid var(--line)}
-.m-pe .m-kpi{margin-bottom:14px}
-.bar-rev{background:linear-gradient(90deg,var(--grn),var(--amb),var(--red))}
-
