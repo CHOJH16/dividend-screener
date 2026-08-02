@@ -1,4 +1,5 @@
 const DATA_FILE = "data/screener_us.json";
+const NCOL = 11;
 
 const BAND = {
   "-2": { label: "매우 고평가", cls: "b--2" },
@@ -19,6 +20,7 @@ const FULL_HISTORY = 9.5;
 const DEFAULTS = {
   idx: ["SP500", "NDX100"], streak: 10, minY: 0,
   band: "all", moat: "all", q: "", trap: true,
+  maxPE: 0, peBand: "all", hasPE: false,
   sort: "pct", dir: -1,
 };
 
@@ -28,6 +30,8 @@ let S = { ...DEFAULTS, idx: new Set(DEFAULTS.idx) };
 const $ = (s) => document.querySelector(s);
 const fmtP = (v) => "$" + Number(v).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtY = (v) => Number(v).toFixed(2) + "%";
+const has = (v) => v !== null && v !== undefined && v !== "";
+const fmtE = (v) => (has(v) ? Number(v).toFixed(1) + "배" : "-");
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /* ---------------------------------------------------- 상태 → 화면 동기화 */
@@ -35,15 +39,20 @@ function syncControls() {
   $("#f-streak").value = String(S.streak);
   $("#f-miny").value   = String(S.minY);
   $("#f-band").value   = S.band;
+  $("#f-pe").value     = String(S.maxPE);
+  $("#f-peband").value = S.peBand;
   $("#f-moat").value   = S.moat;
   $("#f-q").value      = S.q;
   $("#f-trap").checked = S.trap;
+  $("#f-hasspe").checked = S.hasPE;
   document.querySelectorAll("#f-idx .chip").forEach((x) =>
     x.classList.toggle("on", S.idx.has(x.dataset.v)));
 
   if ($("#f-streak").value === "") { S.streak = 0;     $("#f-streak").value = "0"; }
   if ($("#f-miny").value   === "") { S.minY   = 0;     $("#f-miny").value   = "0"; }
   if ($("#f-band").value   === "") { S.band   = "all"; $("#f-band").value   = "all"; }
+  if ($("#f-pe").value     === "") { S.maxPE  = 0;     $("#f-pe").value     = "0"; }
+  if ($("#f-peband").value === "") { S.peBand = "all"; $("#f-peband").value = "all"; }
   if ($("#f-moat").value   === "") { S.moat   = "all"; $("#f-moat").value   = "all"; }
 }
 
@@ -86,12 +95,12 @@ function getJSON(url) {
 function showError(title, detail) {
   $("#updated").textContent = title;
   $("#tbody").innerHTML =
-    '<tr><td colspan="8" class="empty">' + title +
+    '<tr><td colspan="' + NCOL + '" class="empty">' + title +
     '<br><small style="opacity:.7">' + String(detail || "").slice(0, 200) + "</small><br><br>" +
     '<button type="button" id="btn-retry" class="ghost">다시 시도</button></td></tr>';
   const b = $("#btn-retry");
   if (b) b.onclick = () => {
-    $("#tbody").innerHTML = '<tr><td colspan="8" class="empty">다시 불러오는 중입니다…</td></tr>';
+    $("#tbody").innerHTML = '<tr><td colspan="' + NCOL + '" class="empty">다시 불러오는 중입니다…</td></tr>';
     load();
   };
 }
@@ -154,11 +163,31 @@ function moatCell(d) {
   return '<span class="moat-unrated" title="모닝스타 애널리스트가 커버하지 않는 종목이라 해자 등급이 없습니다">미평가</span>';
 }
 
+/* ---------------------------------------------------- PER 표시 */
+function hasPE(d) {
+  return has(d.pe) && has(d.pepct);
+}
+
+function peCell(d) {
+  if (!hasPE(d)) {
+    const why = isETF(d) ? "ETF는 PER 대상이 아닙니다"
+                         : "적자이거나 분기 EPS를 확보하지 못한 종목입니다";
+    return `<span class="moat-na" title="${why}">-</span>`;
+  }
+  const b = BAND[String(d.peband)] || BAND["0"];
+  return `<div class="cellbar">
+      <span class="pnum" title="최근 ${d.peyrs}년 중 지금보다 PER이 낮았던 기간 비율">${Math.round(d.pepct)}%</span>
+      <span class="badge ${b.cls}">${b.label}</span>
+    </div>`;
+}
+
 /* ---------------------------------------------------- 필터 + 정렬 */
 function view() {
   const q = S.q.trim().toLowerCase();
   const minStreak = Number(S.streak) || 0;
   const minY = Number(S.minY) || 0;
+  const maxPE = Number(S.maxPE) || 0;
+  const needPE = S.hasPE || maxPE > 0 || S.peBand !== "all";
 
   let rows = ALL.filter((d) => {
     const idx = d.idx || [];
@@ -172,6 +201,14 @@ function view() {
     if (S.moat === "wide" && d.moat !== "Wide") return false;
     if (S.moat === "wn" && !(d.moat === "Wide" || d.moat === "Narrow")) return false;
     if (S.moat === "rated" && !d.moat) return false;
+
+    if (needPE && !hasPE(d)) return false;
+    if (maxPE > 0 && Number(d.pe) > maxPE) return false;
+    if (S.peBand === "below" && !(has(d.pe50) && Number(d.pe) <= Number(d.pe50))) return false;
+    if (S.peBand === "notrich" && d.pepct > 70) return false;
+    if (S.peBand === "cheap" && d.pepct > 30) return false;
+    if (S.peBand === "verycheap" && d.pepct > 10) return false;
+
     if (q && !((d.sym || "").toLowerCase().includes(q) ||
                (d.name || "").toLowerCase().includes(q) ||
                (d.sec || "").toLowerCase().includes(q))) return false;
@@ -182,6 +219,10 @@ function view() {
   rows.sort((a, b) => {
     if (k === "moat") return (moatRank(a) - moatRank(b)) * S.dir;
     const x = a[k], y = b[k];
+    const xn = !has(x), yn = !has(y);
+    if (xn && yn) return 0;
+    if (xn) return 1;            // 값이 없는 종목은 항상 뒤로
+    if (yn) return -1;
     if (typeof x === "string") return String(x).localeCompare(String(y)) * S.dir;
     return ((x || 0) - (y || 0)) * S.dir;
   });
@@ -200,7 +241,7 @@ function render() {
 
   if (!rows.length) {
     $("#tbody").innerHTML =
-      '<tr><td colspan="8" class="empty">조건에 맞는 종목이 없습니다. 필터를 완화해 보세요.</td></tr>';
+      '<tr><td colspan="' + NCOL + '" class="empty">조건에 맞는 종목이 없습니다. 필터를 완화해 보세요.</td></tr>';
     return;
   }
 
@@ -226,6 +267,9 @@ function render() {
           <span class="badge ${b.cls}">${b.label}</span>
         </div>
       </td>
+      <td class="r big">${fmtE(d.pe)}</td>
+      <td class="r">${fmtE(d.pe50)}</td>
+      <td class="c">${peCell(d)}</td>
       <td class="r">${d.streak}년</td>
       <td class="c">${moatCell(d)}</td>
       <td>${d.sec}</td>
@@ -268,8 +312,39 @@ function openModal(sym) {
     `현재 배당수익률이 최근 ${d.yrs}년 기준 상위 ${Math.round(100 - d.pct)}% 구간입니다. ` +
     (d.pct >= 70 ? "역사적으로 낮은 주가·높은 수익률 구간입니다."
                  : d.pct <= 30 ? "역사적으로 높은 주가·낮은 수익률 구간입니다."
-                 : "평균적인 구간입니다.") +
-    (d.yrs < FULL_HISTORY ? " 다만 데이터 기간이 10년보다 짧아 밴드 신뢰도가 낮습니다." : "");
+                 : "평균적인 구간입니다.");
+
+  /* PER 밴드 */
+  if (hasPE(d)) {
+    $("#m-pe-wrap").hidden = false;
+    $("#m-pe-none").hidden = true;
+    $("#m-pe").textContent    = fmtE(d.pe);
+    $("#m-peps").textContent  = has(d.peps) ? "$" + Number(d.peps).toFixed(2) : "-";
+    $("#m-pe50").textContent  = fmtE(d.pe50);
+    $("#m-peavg").textContent = fmtE(d.peavg);
+    $("#m-pemarker").style.left = d.pepct + "%";
+    $("#m-pemarker-t").textContent = Math.round(d.pepct) + "백분위";
+    $("#m-pe10").textContent  = fmtE(d.pe10);
+    $("#m-pe25").textContent  = fmtE(d.pe25);
+    $("#m-pe50b").textContent = fmtE(d.pe50);
+    $("#m-pe75").textContent  = fmtE(d.pe75);
+    $("#m-pe90").textContent  = fmtE(d.pe90);
+    const gap = has(d.pe50) && Number(d.pe50) > 0
+      ? Math.round((Number(d.pe) / Number(d.pe50) - 1) * 100) : null;
+    $("#m-penote").textContent =
+      `최근 ${d.peyrs}년 가운데 ${Math.round(d.pepct)}%의 기간이 지금보다 PER이 낮았습니다. ` +
+      (gap === null ? "" :
+        (gap > 0 ? `10년 중앙 PER보다 ${gap}% 비쌉니다. `
+                 : `10년 중앙 PER보다 ${Math.abs(gap)}% 쌉니다. `)) +
+      (d.pepct <= 30 ? "역사적으로 싼 구간입니다."
+                     : d.pepct >= 70 ? "역사적으로 비싼 구간입니다."
+                     : "평균적인 구간입니다.") +
+      (d.pestale ? " (오늘 EPS 갱신에 실패해 직전 실적으로 계산했습니다)" : "");
+  } else {
+    $("#m-pe-wrap").hidden = true;
+    $("#m-pe-none").hidden = false;
+  }
+
   $("#m-yahoo").href = "https://finance.yahoo.com/quote/" + d.sym;
   $("#modal").hidden = false;
 }
@@ -289,8 +364,11 @@ document.querySelectorAll("#f-idx .chip").forEach((c) => {
 $("#f-streak").onchange = (e) => { S.streak = +e.target.value; render(); };
 $("#f-miny").onchange   = (e) => { S.minY   = +e.target.value; render(); };
 $("#f-band").onchange   = (e) => { S.band   = e.target.value;  render(); };
+$("#f-pe").onchange     = (e) => { S.maxPE  = +e.target.value; render(); };
+$("#f-peband").onchange = (e) => { S.peBand = e.target.value;  render(); };
 $("#f-moat").onchange   = (e) => { S.moat   = e.target.value;  render(); };
 $("#f-trap").onchange   = (e) => { S.trap   = e.target.checked; render(); };
+$("#f-hasspe").onchange = (e) => { S.hasPE  = e.target.checked; render(); };
 
 let t = null;
 $("#f-q").oninput = (e) => {
@@ -298,10 +376,11 @@ $("#f-q").oninput = (e) => {
   t = setTimeout(() => { S.q = e.target.value; render(); }, 180);
 };
 
+const ASC_FIRST = ["name", "sec", "pe", "pe50", "pepct"];
 document.querySelectorAll("th.s").forEach((th) => {
   th.onclick = () => {
     const k = th.dataset.key;
-    S.dir = S.sort === k ? -S.dir : (["name", "sec"].includes(k) ? 1 : -1);
+    S.dir = S.sort === k ? -S.dir : (ASC_FIRST.includes(k) ? 1 : -1);
     S.sort = k;
     render();
   };
@@ -315,11 +394,17 @@ $("#btn-reset").onclick = () => {
 
 $("#btn-csv").onclick = () => {
   const rows = view();
-  const head = ["티커", "종목명", "주가", "현재배당수익률", "10년중앙", "백분위", "밴드",
+  const head = ["티커", "종목명", "주가", "현재배당수익률", "10년중앙수익률", "수익률백분위", "배당밴드",
+                "현재PER", "10년중앙PER", "10년평균PER", "PER백분위", "PER밴드", "최근12개월EPS",
                 "배당증가유지기간", "해자", "밴드계산기간", "섹터"];
-  const body = rows.map((d) => [d.sym, `"${d.name}"`, d.px, d.y, d.y50,
-    d.pct, (BAND[String(d.band)] || BAND["0"]).label, d.streak,
-    d.moat || (isETF(d) ? "" : "미평가"),
+  const body = rows.map((d) => [
+    d.sym, `"${d.name}"`, d.px, d.y, d.y50,
+    d.pct, (BAND[String(d.band)] || BAND["0"]).label,
+    has(d.pe) ? d.pe : "", has(d.pe50) ? d.pe50 : "", has(d.peavg) ? d.peavg : "",
+    has(d.pepct) ? d.pepct : "",
+    hasPE(d) ? (BAND[String(d.peband)] || BAND["0"]).label : "",
+    has(d.peps) ? d.peps : "",
+    d.streak, d.moat || (isETF(d) ? "" : "미평가"),
     d.yrs, `"${d.sec}"`].join(","));
   const blob = new Blob(["\uFEFF" + [head.join(","), ...body].join("\n")],
     { type: "text/csv;charset=utf-8" });
