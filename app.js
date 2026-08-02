@@ -1,5 +1,4 @@
 const DATA_FILE = "data/screener_us.json";
-const NCOL = 9;
 
 const BAND = {
   "-2": { label: "매우 고평가", cls: "b--2" },
@@ -29,8 +28,6 @@ let S = { ...DEFAULTS, idx: new Set(DEFAULTS.idx) };
 const $ = (s) => document.querySelector(s);
 const fmtP = (v) => "$" + Number(v).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtY = (v) => Number(v).toFixed(2) + "%";
-const has = (v) => v !== null && v !== undefined && v !== "";
-const fmtE = (v) => (has(v) ? Number(v).toFixed(1) + "배" : "-");
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /* ---------------------------------------------------- 상태 → 화면 동기화 */
@@ -89,12 +86,12 @@ function getJSON(url) {
 function showError(title, detail) {
   $("#updated").textContent = title;
   $("#tbody").innerHTML =
-    '<tr><td colspan="' + NCOL + '" class="empty">' + title +
+    '<tr><td colspan="8" class="empty">' + title +
     '<br><small style="opacity:.7">' + String(detail || "").slice(0, 200) + "</small><br><br>" +
     '<button type="button" id="btn-retry" class="ghost">다시 시도</button></td></tr>';
   const b = $("#btn-retry");
   if (b) b.onclick = () => {
-    $("#tbody").innerHTML = '<tr><td colspan="' + NCOL + '" class="empty">다시 불러오는 중입니다…</td></tr>';
+    $("#tbody").innerHTML = '<tr><td colspan="8" class="empty">다시 불러오는 중입니다…</td></tr>';
     load();
   };
 }
@@ -157,15 +154,6 @@ function moatCell(d) {
   return '<span class="moat-unrated" title="모닝스타 애널리스트가 커버하지 않는 종목이라 해자 등급이 없습니다">미평가</span>';
 }
 
-function peCell(d) {
-  if (!has(d.fpe)) {
-    const why = isETF(d) ? "ETF는 예상 PER 대상이 아닙니다"
-                         : "애널리스트 예상 실적이 없거나 적자가 예상되는 종목입니다";
-    return `<span class="moat-na" title="${why}">-</span>`;
-  }
-  return `<span title="야후 파이낸스 기준 향후 12개월 예상 PER">${fmtE(d.fpe)}</span>`;
-}
-
 /* ---------------------------------------------------- 필터 + 정렬 */
 function view() {
   const q = S.q.trim().toLowerCase();
@@ -194,10 +182,6 @@ function view() {
   rows.sort((a, b) => {
     if (k === "moat") return (moatRank(a) - moatRank(b)) * S.dir;
     const x = a[k], y = b[k];
-    const xn = !has(x), yn = !has(y);
-    if (xn && yn) return 0;
-    if (xn) return 1;            // 값이 없는 종목은 항상 뒤로
-    if (yn) return -1;
     if (typeof x === "string") return String(x).localeCompare(String(y)) * S.dir;
     return ((x || 0) - (y || 0)) * S.dir;
   });
@@ -216,7 +200,7 @@ function render() {
 
   if (!rows.length) {
     $("#tbody").innerHTML =
-      '<tr><td colspan="' + NCOL + '" class="empty">조건에 맞는 종목이 없습니다. 필터를 완화해 보세요.</td></tr>';
+      '<tr><td colspan="8" class="empty">조건에 맞는 종목이 없습니다. 필터를 완화해 보세요.</td></tr>';
     return;
   }
 
@@ -242,7 +226,6 @@ function render() {
           <span class="badge ${b.cls}">${b.label}</span>
         </div>
       </td>
-      <td class="r">${peCell(d)}</td>
       <td class="r">${d.streak}년</td>
       <td class="c">${moatCell(d)}</td>
       <td>${d.sec}</td>
@@ -274,8 +257,6 @@ function openModal(sym) {
   $("#m-ttm").textContent = "$" + Number(d.ttm).toFixed(2);
   $("#m-y").textContent = fmtY(d.y);
   $("#m-pct").textContent = Math.round(d.pct) + "백분위";
-  $("#m-fpe").textContent = fmtE(d.fpe);
-  $("#m-feps").textContent = has(d.feps) ? "$" + Number(d.feps).toFixed(2) : "-";
   $("#m-marker").style.left = d.pct + "%";
   $("#m-marker-t").textContent = Math.round(d.pct) + "백분위";
   $("#m-p10").textContent = fmtY(d.y10);
@@ -287,8 +268,8 @@ function openModal(sym) {
     `현재 배당수익률이 최근 ${d.yrs}년 기준 상위 ${Math.round(100 - d.pct)}% 구간입니다. ` +
     (d.pct >= 70 ? "역사적으로 낮은 주가·높은 수익률 구간입니다."
                  : d.pct <= 30 ? "역사적으로 높은 주가·낮은 수익률 구간입니다."
-                 : "평균적인 구간입니다.");
-
+                 : "평균적인 구간입니다.") +
+    (d.yrs < FULL_HISTORY ? " 다만 데이터 기간이 10년보다 짧아 밴드 신뢰도가 낮습니다." : "");
   $("#m-yahoo").href = "https://finance.yahoo.com/quote/" + d.sym;
   $("#modal").hidden = false;
 }
@@ -317,11 +298,10 @@ $("#f-q").oninput = (e) => {
   t = setTimeout(() => { S.q = e.target.value; render(); }, 180);
 };
 
-const ASC_FIRST = ["name", "sec", "fpe"];
 document.querySelectorAll("th.s").forEach((th) => {
   th.onclick = () => {
     const k = th.dataset.key;
-    S.dir = S.sort === k ? -S.dir : (ASC_FIRST.includes(k) ? 1 : -1);
+    S.dir = S.sort === k ? -S.dir : (["name", "sec"].includes(k) ? 1 : -1);
     S.sort = k;
     render();
   };
@@ -336,11 +316,10 @@ $("#btn-reset").onclick = () => {
 $("#btn-csv").onclick = () => {
   const rows = view();
   const head = ["티커", "종목명", "주가", "현재배당수익률", "10년중앙", "백분위", "밴드",
-                "예상PER", "예상EPS", "배당증가유지기간", "해자", "밴드계산기간", "섹터"];
+                "배당증가유지기간", "해자", "밴드계산기간", "섹터"];
   const body = rows.map((d) => [d.sym, `"${d.name}"`, d.px, d.y, d.y50,
-    d.pct, (BAND[String(d.band)] || BAND["0"]).label,
-    has(d.fpe) ? d.fpe : "", has(d.feps) ? d.feps : "",
-    d.streak, d.moat || (isETF(d) ? "" : "미평가"),
+    d.pct, (BAND[String(d.band)] || BAND["0"]).label, d.streak,
+    d.moat || (isETF(d) ? "" : "미평가"),
     d.yrs, `"${d.sec}"`].join(","));
   const blob = new Blob(["\uFEFF" + [head.join(","), ...body].join("\n")],
     { type: "text/csv;charset=utf-8" });
