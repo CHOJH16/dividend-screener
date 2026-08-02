@@ -7,7 +7,7 @@
 body{margin:0;background:var(--bg);color:var(--txt);
   font-family:'Pretendard','Apple SD Gothic Neo','Malgun Gothic',system-ui,sans-serif;
   font-size:14px;line-height:1.55;-webkit-text-size-adjust:100%}
-.wrap{max-width:1180px;margin:0 auto;padding:0 16px}
+.wrap{max-width:1280px;margin:0 auto;padding:0 14px}
 
 .hd{background:linear-gradient(120deg,#4f46e5,#7c3aed);color:#fff;padding:22px 0}
 .hd-in{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
@@ -44,24 +44,35 @@ select:focus,input:focus{outline:2px solid rgba(79,70,229,.25);border-color:var(
   font-size:12.5px;font-weight:700;color:var(--sub);cursor:pointer;font-family:inherit}
 .ghost:hover{border-color:var(--pri);color:var(--pri)}
 
+/* ---------- 표 : 가로 스크롤 없이 들어가도록 폭 고정 ---------- */
 .tbl-wrap{overflow-x:auto;margin:-18px;padding:0}
-table{width:100%;border-collapse:collapse;min-width:760px}
-th,td{padding:12px 11px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap}
-th{font-size:12px;color:var(--sub);font-weight:700;background:#fbfbfe;position:sticky;top:0;z-index:2}
+table{width:100%;border-collapse:collapse;table-layout:fixed;min-width:940px}
+th,td{padding:11px 8px;text-align:left;border-bottom:1px solid var(--line);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+th{font-size:11.5px;color:var(--sub);font-weight:700;background:#fbfbfe;
+  position:sticky;top:0;z-index:2;white-space:normal;line-height:1.35}
 th.s{cursor:pointer;user-select:none} th.s:hover{color:var(--pri)}
 th.r,td.r{text-align:right} th.c,td.c{text-align:center}
 th.on{color:var(--pri)} th.on::after{content:" ▾"} th.on.asc::after{content:" ▴"}
-.w-band{min-width:126px}
 tbody tr{cursor:pointer} tbody tr:hover{background:#f8f8ff}
 .nm{font-weight:700} .tk{color:var(--sub);font-size:12px;margin-left:6px}
 .tag{display:inline-block;font-size:10px;font-weight:700;padding:1px 5px;border-radius:4px;
   margin-left:5px;background:#eef0fb;color:#5b62a8}
 .big{font-weight:800;font-size:14.5px}
-.empty{text-align:center;color:var(--sub);padding:44px 0}
+.empty{text-align:center;color:var(--sub);padding:44px 0;white-space:normal}
 
-.cellbar{display:flex;align-items:center;gap:8px;justify-content:center}
-.pnum{font-size:12px;font-weight:800;color:var(--sub);width:34px;text-align:right}
-.badge{font-size:11px;font-weight:800;padding:3px 8px;border-radius:99px;white-space:nowrap}
+#tbl th:nth-child(2){width:84px}    /* 주가 */
+#tbl th:nth-child(3){width:88px}    /* 현재 배당수익률 */
+#tbl th:nth-child(4){width:88px}    /* 10년 중앙 수익률 */
+#tbl th:nth-child(5){width:130px}   /* 배당수익률 위치 */
+#tbl th:nth-child(6){width:80px}    /* 예상 PER */
+#tbl th:nth-child(7){width:80px}    /* 배당 증가 기간 */
+#tbl th:nth-child(8){width:66px}    /* 해자 */
+#tbl th:nth-child(9){width:88px}    /* 섹터 */
+
+.cellbar{display:flex;align-items:center;gap:7px;justify-content:center}
+.pnum{font-size:12px;font-weight:800;color:var(--sub);width:32px;text-align:right}
+.badge{font-size:11px;font-weight:800;padding:3px 7px;border-radius:99px;white-space:nowrap}
 .b--2{background:#fde8e8;color:#c0392b} .b--1{background:#fdf1e3;color:#c17d1a}
 .b-0{background:#eef0f5;color:#5c6379}  .b-1{background:#e6f6ee;color:#1c8558}
 .b-2{background:#d8f2e5;color:#0f6b45}
@@ -105,15 +116,24 @@ tbody tr{cursor:pointer} tbody tr:hover{background:#f8f8ff}
   border-radius:9px;font-size:12.5px;font-weight:700;color:var(--pri);text-decoration:none}
 .m-links a:hover{background:#f4f4ff}
 
+/* ---------- 화면이 좁아지면 덜 중요한 열부터 숨긴다 ---------- */
+@media(max-width:1120px){
+  table{min-width:860px}
+  #tbl th:nth-child(9),#tbl td:nth-child(9){display:none}   /* 섹터 */
+}
+@media(max-width:920px){
+  table{min-width:740px}
+  #tbl th:nth-child(4),#tbl td:nth-child(4){display:none}   /* 10년 중앙 수익률 */
+}
 @media(max-width:640px){
   .hd h1{font-size:17px} .card{padding:14px} .tbl-wrap{margin:-14px}
   .m-kpi{grid-template-columns:1fr}
+  table{min-width:580px}
+  th,td{padding:10px 7px}
+  #tbl th:nth-child(8),#tbl td:nth-child(8){display:none}   /* 해자 */
+  #tbl th:nth-child(2){width:74px}
+  #tbl th:nth-child(3){width:76px}
+  #tbl th:nth-child(5){width:118px}
+  #tbl th:nth-child(6){width:70px}
+  #tbl th:nth-child(7){width:70px}
 }
-
-/* ---------- 경제적 해자 ---------- */
-.moat-wide    { background:#0f766e; color:#fff; }
-.moat-narrow  { background:#5eead4; color:#134e4a; }
-.moat-none    { background:#e2e8f0; color:#64748b; }
-.moat-unrated { color:#b6bccd; font-size:11.5px; font-weight:500;
-                cursor:help; }
-.moat-na      { color:#cbd5e1; }
