@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>미국 배당주 스크리너 · 10년 배당수익률 밴드</title>
 <meta name="description" content="S&P 500, 나스닥 100, 대표 배당 ETF를 10년 배당수익률 밴드와 모닝스타 해자 등급으로 스크리닝합니다.">
-<link rel="stylesheet" href="./style.css?v=12">
-<script src="./app.js?v=12" defer></script>
+<link rel="stylesheet" href="./style.css?v=10">
+<script src="./app.js?v=10" defer></script>
 </head>
 <body>
 
@@ -109,16 +109,15 @@
             <th class="s" data-key="name">종목명 (티커)</th>
             <th class="s r" data-key="px">주가</th>
             <th class="s r" data-key="y">현재 배당수익률</th>
-            <th class="s r" data-key="y50">10년 중앙 수익률</th>
-            <th class="s c" data-key="pct">배당수익률 위치</th>
-            <th class="s r" data-key="fpe">예상 PER</th>
-            <th class="s r" data-key="streak">배당 증가 기간</th>
+            <th class="s r" data-key="y50">10년 중앙 배당수익률</th>
+            <th class="s c w-band" data-key="pct">현재 배당수익률 위치</th>
+            <th class="s r" data-key="streak">배당 증가(유지) 기간</th>
             <th class="s c" data-key="moat">해자</th>
             <th class="s" data-key="sec">섹터</th>
           </tr>
         </thead>
         <tbody id="tbody">
-          <tr><td colspan="9" class="empty">데이터를 불러오는 중입니다…</td></tr>
+          <tr><td colspan="8" class="empty">데이터를 불러오는 중입니다…</td></tr>
         </tbody>
       </table>
     </div>
@@ -127,7 +126,6 @@
   <section class="notice">
     <b>투자 참고사항</b>
     <p><b>경제적 해자</b>는 모닝스타 애널리스트가 평가한 기업의 구조적 경쟁우위입니다. 넓음은 20년 이상, 좁음은 10년 이상 초과수익을 유지할 것으로 본다는 뜻입니다. <b>미평가</b>는 모닝스타 애널리스트가 커버하지 않아 등급이 없는 종목이며, 해자가 없다는 뜻이 아닙니다. 재무지표만으로 등급을 추정하는 퀀트 모델 값은 브랜드나 전환비용 같은 정성적 판단이 빠져 있어 사용하지 않았습니다. ETF는 개별 기업이 아니라 해자 등급 대상이 아니므로 <b>-</b>로 표시됩니다.</p>
-    <p><b>예상 PER</b>은 야후 파이낸스가 집계한 애널리스트들의 향후 12개월 예상 EPS로 계산한 선행 PER입니다. 실적 전망이 바뀌면 값도 함께 바뀌며, 애널리스트 커버가 없거나 적자가 예상되는 기업, 그리고 ETF는 <b>-</b>로 표시됩니다. 과거 평균과 비교한 값이 아니라 현재 시점의 숫자 하나이므로, 같은 업종끼리 비교하거나 배당 밴드·해자와 함께 참고용으로만 보세요.</p>
     <p>종목명 옆의 <b>이력 6.2년</b> 같은 회색 딱지는 배당 데이터가 10년보다 짧다는 표시입니다. 이런 종목의 백분위는 짧은 기간 안에서의 위치라 밴드 신뢰도가 낮습니다.</p>
     <p>배당수익률이 높다고 반드시 저평가된 것은 아닙니다. 주가 급락이나 향후 배당 삭감 가능성 때문에 배당수익률이 높아질 수도 있습니다. 지수 편입 종목만 다루므로 배당을 삭감해 지수에서 제외된 기업은 애초에 목록에 없다는 점(생존 편향)도 감안하세요.</p>
     <p>커버드콜 ETF(JEPI·JEPQ·DIVO 등)의 분배금은 옵션 프리미엄에 연동돼 매월 변동하므로 배당 증가(유지) 기간이 짧게 나오는 것이 정상입니다.</p>
@@ -152,8 +150,6 @@
       <div><span>최근 12개월 배당금</span><b id="m-ttm">—</b></div>
       <div><span>현재 배당수익률</span><b id="m-y">—</b></div>
       <div><span>10년 백분위</span><b id="m-pct">—</b></div>
-      <div><span>예상 PER</span><b id="m-fpe">—</b></div>
-      <div><span>12개월 예상 EPS</span><b id="m-feps">—</b></div>
     </div>
 
     <div class="m-band">
