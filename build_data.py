@@ -1,11 +1,8 @@
 # -*- coding: utf-8 -*-
 """
 S&P 500 + 나스닥 100 + 대표 배당 ETF의
-10년 배당수익률 밴드 + 10년 PER 밴드 + 모닝스타 해자 등급 데이터를 만들어
+10년 배당수익률 밴드 + 모닝스타 해자 등급 데이터를 만들어
 data/screener_us.json 으로 저장한다.
-
-PER은 SEC EDGAR의 공개 XBRL 데이터에서 분기 EPS를 받아
-최근 12개월 EPS 시계열을 만들고, 야후 주가로 나눠 계산한다.
 """
 
 import io, os, json, time, datetime as dt
@@ -29,30 +26,6 @@ UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
 # 모닝스타 해자 등급 (영국 사이트의 공개 스크리너 엔드포인트)
 MS_URL = "https://tools.morningstar.co.uk/api/rest.svc/klr5zyak8x/security/screener"
 MS_UNIVERSE = "E0EXG$XNYS|E0EXG$XNAS|E0EXG$XASE"
-
-# ----------------------------------------------------------- SEC EDGAR (PER용)
-# SEC는 접속자를 식별할 수 있는 User-Agent를 요구한다. 본인 이메일로 바꿔도 된다.
-SEC_CONTACT     = "dividend-screener/1.0 (github.com/CHOJH16)"
-SEC_HDR         = {"User-Agent": SEC_CONTACT, "Accept-Encoding": "gzip, deflate"}
-SEC_TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
-CONCEPT_URL     = "https://data.sec.gov/api/xbrl/companyconcept/CIK{cik:010d}/{ns}/{tag}.json"
-SEC_PAUSE       = 0.13          # 초당 10회 제한을 넉넉히 지킨다
-PE_MAX          = 300.0
-
-EPS_CONCEPTS = [
-    ("us-gaap",   "EarningsPerShareDiluted"),
-    ("us-gaap",   "EarningsPerShareBasicAndDiluted"),
-    ("us-gaap",   "EarningsPerShareBasic"),
-    ("ifrs-full", "DilutedEarningsLossPerShare"),
-    ("ifrs-full", "BasicEarningsLossPerShare"),
-]
-
-# PER은 낮을수록 싸다. 백분위가 낮을수록 저평가.
-PE_BANDS = [(10, "매우 저평가", 2), (30, "저평가", 1), (70, "중립", 0),
-            (90, "고평가", -1), (101, "매우 고평가", -2)]
-
-PE_KEYS = ("pe", "peps", "pe10", "pe25", "pe50", "pe75", "pe90",
-           "peavg", "pepct", "peband", "pebandLabel", "peyrs")
 
 # ----------------------------------------------------------- 섹터 한글 이름
 SECTOR_KO = {
@@ -256,209 +229,6 @@ def load_prev_moat():
                 for x in old.get("items", []) if x.get("moat") or x.get("qmoat")}
     except Exception:
         return {}
-
-def load_prev_pe():
-    """PER 수집이 실패했을 때 쓸 직전 결과."""
-    try:
-        with open("data/screener_us.json", encoding="utf-8") as f:
-            old = json.load(f)
-        return {x["sym"]: {k: x.get(k) for k in PE_KEYS}
-                for x in old.get("items", []) if x.get("pe")}
-    except Exception:
-        return {}
-
-# ----------------------------------------------------------- SEC 재무 데이터
-def sec_get(url, tries=3):
-    for i in range(tries):
-        try:
-            r = requests.get(url, headers=SEC_HDR, timeout=30)
-            if r.status_code == 404:
-                return None
-            r.raise_for_status()
-            return r.json()
-        except Exception:
-            time.sleep(1.0 + i * 1.5)
-    return None
-
-def fetch_cik_map():
-    """티커 -> CIK 번호."""
-    j = sec_get(SEC_TICKERS_URL)
-    out = {}
-    if not j:
-        print("[PER] SEC 티커 목록을 받지 못했습니다.")
-        return out
-    src = j.values() if isinstance(j, dict) else j
-    for v in src:
-        try:
-            t = str(v.get("ticker", "")).strip().upper().replace(".", "-")
-            c = int(v.get("cik_str"))
-        except Exception:
-            continue
-        if t and c:
-            out.setdefault(t, c)
-    print(f"[PER] SEC 티커 {len(out)}개 확보")
-    return out
-
-def eps_quarters(js):
-    """companyconcept 응답 -> {분기말일: (EPS, 공시일)}"""
-    units = (js or {}).get("units", {})
-    facts = []
-    for k, arr in units.items():
-        if "share" in str(k).lower():
-            facts.extend(arr)
-    if not facts:
-        return {}
-
-    ok_form = ("10-Q", "10-K", "10-Q/A", "10-K/A", "20-F", "40-F", "20-F/A")
-    per = {}
-    for f in facts:
-        s, e, v = f.get("start"), f.get("end"), f.get("val")
-        if s is None or e is None or v is None:
-            continue
-        if str(f.get("form", "")) not in ok_form:
-            continue
-        try:
-            s = pd.Timestamp(s); e = pd.Timestamp(e); v = float(v)
-        except Exception:
-            continue
-        d = (e - s).days
-        if d < 55 or d > 400:
-            continue
-        filed = str(f.get("filed") or e.date())
-        cur = per.get((s, e))
-        if cur is None or filed >= cur[1]:      # 정정 공시가 있으면 최신 것을 쓴다
-            per[(s, e)] = (v, filed)
-
-    q, ann = {}, {}
-    for (s, e), (v, filed) in per.items():
-        d = (e - s).days
-        if 55 <= d <= 130:
-            cur = q.get(e)
-            if cur is None or filed >= cur[1]:
-                q[e] = (v, filed)
-        elif 330 <= d <= 400:
-            ann[(s, e)] = (v, filed)
-
-    # 4분기 값을 따로 공시하지 않는 회사는 (연간 - 앞의 세 분기)로 채운다
-    for (s, e), (v, filed) in sorted(ann.items()):
-        if e in q:
-            continue
-        inside = [q[k][0] for k in list(q) if s < k < e]
-        if len(inside) == 3:
-            q[e] = (v - sum(inside), filed)
-    return q
-
-def eps_ttm(qmap):
-    """분기 EPS -> 최근 12개월 EPS 시계열(공시일 기준)."""
-    ends = sorted(qmap)
-    out = {}
-    for i in range(3, len(ends)):
-        win = ends[i - 3:i + 1]
-        span = (win[-1] - win[0]).days
-        if span < 230 or span > 320:            # 4개 분기가 이어져 있어야 한다
-            continue
-        val = sum(qmap[e][0] for e in win)
-        avail = max([pd.Timestamp(qmap[e][1]) for e in win] + [win[-1]])
-        out[avail] = val                        # 실제로 알 수 있게 된 날짜에 반영
-    if not out:
-        return pd.Series(dtype=float)
-    s = pd.Series(list(out.values()),
-                  index=pd.DatetimeIndex(list(out.keys()))).sort_index()
-    return s[~s.index.duplicated(keep="last")]
-
-def split_factor(splits, dates):
-    """각 날짜 이후에 일어난 액면분할 비율의 누적곱.
-       SEC의 EPS는 당시 공시값이라 이후 분할만큼 나눠 줘야 주가와 기준이 맞는다."""
-    idx = pd.DatetimeIndex(dates)
-    if splits is None or len(splits) == 0:
-        return pd.Series(1.0, index=idx)
-    s = splits.sort_index()
-    cum = s[::-1].cumprod()[::-1]
-    pos = cum.index.searchsorted(idx, side="right")
-    vals = [float(cum.iloc[p]) if p < len(cum) else 1.0 for p in pos]
-    return pd.Series(vals, index=idx)
-
-def compute_pe(df, qmap, today):
-    """10년 PER 밴드 계산."""
-    if df is None or df.empty or "Close" not in df:
-        return None
-    px = pd.to_numeric(df["Close"], errors="coerce").dropna()
-    px.index = to_naive(px.index)
-    px = px.groupby(px.index).last().sort_index()
-    if len(px) < 250:
-        return None
-
-    sp = pd.Series(dtype=float)
-    if "Stock Splits" in df:
-        sp = pd.to_numeric(df["Stock Splits"], errors="coerce").fillna(0.0)
-        sp.index = to_naive(sp.index)
-        sp = sp[(sp > 0) & (sp != 1.0)]
-        sp = sp.groupby(sp.index).prod().sort_index()
-
-    ttm = eps_ttm(qmap)
-    if ttm.empty:
-        return None
-    if (pd.Timestamp(today) - ttm.index[-1]).days > 420:   # 1년 넘게 공시가 끊긴 경우
-        return None
-
-    eps = (ttm / split_factor(sp, ttm.index)).sort_index()
-    e = eps.reindex(px.index, method="ffill")
-    per = (px / e).where(e > 0)
-    per = per.replace([np.inf, -np.inf], np.nan).dropna()
-    per = per[(per > 0) & (per < PE_MAX)]
-    if per.empty:
-        return None
-
-    per = per[per.index >= per.index[-1] - pd.Timedelta(days=365.25 * HISTORY_YEARS)]
-    pw = per.resample("W").last().dropna()
-    if len(pw) < MIN_YEARS * 52:
-        return None
-
-    last_eps = e.iloc[-1]
-    cur_eps = float(last_eps) if pd.notna(last_eps) else 0.0
-    cur_px = float(px.iloc[-1])
-    if cur_eps <= 0:                       # 적자 기업은 PER을 쓰지 않는다
-        return None
-    cur_pe = cur_px / cur_eps
-    if cur_pe <= 0 or cur_pe >= PE_MAX:
-        return None
-
-    pct = float((pw < cur_pe).mean() * 100.0)
-    label, band = next((l, b) for th, l, b in PE_BANDS if pct < th)
-    yrs = min((pw.index[-1] - pw.index[0]).days / 365.25, float(HISTORY_YEARS))
-    return {
-        "pe":    round(cur_pe, 1),
-        "peps":  round(cur_eps, 4),
-        "pe10":  round(float(np.percentile(pw, 10)), 1),
-        "pe25":  round(float(np.percentile(pw, 25)), 1),
-        "pe50":  round(float(np.percentile(pw, 50)), 1),
-        "pe75":  round(float(np.percentile(pw, 75)), 1),
-        "pe90":  round(float(np.percentile(pw, 90)), 1),
-        "peavg": round(float(np.mean(pw)), 1),
-        "pepct": round(pct, 1),
-        "peband": band,
-        "pebandLabel": label,
-        "peyrs": round(yrs, 1),
-    }
-
-def fetch_eps_map(sym, cik_map):
-    """티커 하나의 분기 EPS 사전을 SEC에서 받아온다."""
-    cik = cik_map.get(sym) or cik_map.get(sym.replace("-", ".")) \
-        or cik_map.get(sym.replace(".", "-"))
-    if not cik:
-        return None
-    best = None
-    for ns, tag in EPS_CONCEPTS:
-        js = sec_get(CONCEPT_URL.format(cik=cik, ns=ns, tag=tag), tries=2)
-        time.sleep(SEC_PAUSE)
-        if not js:
-            continue
-        q = eps_quarters(js)
-        if len(q) >= 12:
-            return q
-        if q and (best is None or len(q) > len(best)):
-            best = q
-    return best
 
 # ----------------------------------------------------------- 데이터 수집
 def to_naive(idx):
@@ -681,44 +451,6 @@ def main():
         if it["moat"]:
             n_moat += 1
 
-    # PER 밴드 (SEC EDGAR)
-    prev_pe = load_prev_pe()
-    try:
-        cik_map = fetch_cik_map()
-    except Exception as e:
-        print("[PER] 티커 목록 실패:", e)
-        cik_map = {}
-
-    n_pe, n_stale, done = 0, 0, 0
-    targets = [x for x in items if not x["etf"]]
-    print(f"[PER] {len(targets)}종목 계산 시작")
-    for it in targets:
-        sym = it["sym"]
-        blk = None
-        if cik_map:
-            try:
-                qmap = fetch_eps_map(sym, cik_map)
-                if qmap:
-                    blk = compute_pe(frames.get(sym), qmap, today)
-            except Exception as e:
-                print("   PER 실패", sym, e)
-        if blk is None:
-            old = prev_pe.get(sym)
-            if old and old.get("peps"):
-                blk = {k: old.get(k) for k in PE_KEYS}
-                try:
-                    blk["pe"] = round(float(it["px"]) / float(old["peps"]), 1)
-                except Exception:
-                    pass
-                blk["pestale"] = True
-                n_stale += 1
-        if blk:
-            it.update(blk)
-            n_pe += 1
-        done += 1
-        if done % 50 == 0:
-            print(f"  PER 진행 {done}/{len(targets)} · 성공 {n_pe}")
-
     if len(items) < 100:
         raise SystemExit(f"수집 결과가 너무 적습니다({len(items)}개). 다시 실행하세요.")
 
@@ -728,16 +460,13 @@ def main():
     none_ = sum(1 for x in items if x.get("moat") == "None")
     print(f"[점검] 이력 10년 미만: {short}개 / 전체 {len(items)}개")
     print(f"[해자] 등급 있음 {n_moat}개 · 넓음 {wide} · 좁음 {narrow} · 없음 {none_}")
-    print(f"[PER] 값 있음 {n_pe}개 / 대상 {len(targets)}개 (직전 EPS 재사용 {n_stale}개)")
 
     for chk in ("AAPL", "PFE", "KO", "BF-B", "MRSH", "SCHD", "JEPQ"):
         hit = next((x for x in items if x["sym"] == chk), None)
         if hit:
             print(f"[확인] {chk} {hit['name']} · {hit['sec']} · 수익률 {hit['y']}% · "
                   f"백분위 {hit['pct']} · 유지 {hit['streak']}년 · "
-                  f"해자 {hit.get('moat') or '-'} (퀀트 {hit.get('qmoat')}) · "
-                  f"PER {hit.get('pe') or '-'} (10년중앙 {hit.get('pe50') or '-'} · "
-                  f"백분위 {hit.get('pepct') if hit.get('pepct') is not None else '-'})")
+                  f"해자 {hit.get('moat') or '-'} (퀀트 {hit.get('qmoat')})")
         else:
             print(f"[확인] {chk} → 결과에 없음")
 
@@ -748,7 +477,6 @@ def main():
         "updated": kst.strftime("%Y-%m-%d %H:%M KST"),
         "universe": len(uni),
         "count": len(items),
-        "peCount": n_pe,
         "items": items,
     }
     with open("data/screener_us.json", "w", encoding="utf-8") as f:
