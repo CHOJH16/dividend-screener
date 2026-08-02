@@ -3,10 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>미국 배당주 스크리너 · 10년 배당수익률 밴드</title>
-<meta name="description" content="S&P 500, 나스닥 100, 대표 배당 ETF를 10년 배당수익률 밴드와 모닝스타 해자 등급으로 스크리닝합니다.">
-<link rel="stylesheet" href="./style.css?v=10">
-<script src="./app.js?v=10" defer></script>
+<title>미국 배당주 스크리너 · 10년 배당수익률 + PER 밴드</title>
+<meta name="description" content="S&P 500, 나스닥 100, 대표 배당 ETF를 10년 배당수익률 밴드와 10년 PER 밴드, 모닝스타 해자 등급으로 스크리닝합니다.">
+<link rel="stylesheet" href="./style.css?v=11">
+<script src="./app.js?v=11" defer></script>
 </head>
 <body>
 
@@ -16,7 +16,7 @@
       <div class="brand-ico">🔎</div>
       <div>
         <h1>미국 배당주 스크리너</h1>
-        <p>S&amp;P 500 · 나스닥 100 · 대표 배당 ETF를 10년 배당수익률 밴드와 해자 등급으로 검색합니다.</p>
+        <p>S&amp;P 500 · 나스닥 100 · 대표 배당 ETF를 10년 배당수익률 밴드와 10년 PER 밴드, 해자 등급으로 검색합니다.</p>
       </div>
     </div>
     <div class="updated">데이터 기준 <b id="updated">불러오는 중…</b></div>
@@ -62,12 +62,36 @@
       </div>
 
       <div class="f">
-        <label for="f-band">밴드 위치</label>
+        <label for="f-band">배당수익률 밴드 위치</label>
         <select id="f-band">
           <option value="all">전체</option>
           <option value="notrich">고평가 제외 (30%↑)</option>
           <option value="cheap">저평가 구간만 (70%↑)</option>
           <option value="verycheap">매우 저평가만 (90%↑)</option>
+        </select>
+      </div>
+
+      <div class="f">
+        <label for="f-pe">최대 현재 PER</label>
+        <select id="f-pe">
+          <option value="0">무관</option>
+          <option value="10">10배 이하</option>
+          <option value="15">15배 이하</option>
+          <option value="20">20배 이하</option>
+          <option value="25">25배 이하</option>
+          <option value="30">30배 이하</option>
+          <option value="40">40배 이하</option>
+        </select>
+      </div>
+
+      <div class="f">
+        <label for="f-peband">PER 밴드 위치 (10년 대비)</label>
+        <select id="f-peband">
+          <option value="all">전체</option>
+          <option value="below">10년 중앙 PER 이하</option>
+          <option value="notrich">고평가 제외 (70%↓)</option>
+          <option value="cheap">저평가 구간만 (30%↓)</option>
+          <option value="verycheap">매우 저평가만 (10%↓)</option>
         </select>
       </div>
 
@@ -89,6 +113,8 @@
       <div class="f f-chk">
         <label class="chk"><input type="checkbox" id="f-trap" checked>
           배당수익률 15% 초과 제외 <span class="hint">(배당 트랩 방지)</span></label>
+        <label class="chk"><input type="checkbox" id="f-hasspe">
+          PER 없는 종목 제외 <span class="hint">(적자·ETF 등)</span></label>
       </div>
     </div>
 
@@ -110,14 +136,17 @@
             <th class="s r" data-key="px">주가</th>
             <th class="s r" data-key="y">현재 배당수익률</th>
             <th class="s r" data-key="y50">10년 중앙 배당수익률</th>
-            <th class="s c w-band" data-key="pct">현재 배당수익률 위치</th>
+            <th class="s c w-band" data-key="pct">배당수익률 위치</th>
+            <th class="s r" data-key="pe">현재 PER</th>
+            <th class="s r" data-key="pe50">10년 중앙 PER</th>
+            <th class="s c w-band" data-key="pepct">PER 위치</th>
             <th class="s r" data-key="streak">배당 증가(유지) 기간</th>
             <th class="s c" data-key="moat">해자</th>
             <th class="s" data-key="sec">섹터</th>
           </tr>
         </thead>
         <tbody id="tbody">
-          <tr><td colspan="8" class="empty">데이터를 불러오는 중입니다…</td></tr>
+          <tr><td colspan="11" class="empty">데이터를 불러오는 중입니다…</td></tr>
         </tbody>
       </table>
     </div>
@@ -126,10 +155,12 @@
   <section class="notice">
     <b>투자 참고사항</b>
     <p><b>경제적 해자</b>는 모닝스타 애널리스트가 평가한 기업의 구조적 경쟁우위입니다. 넓음은 20년 이상, 좁음은 10년 이상 초과수익을 유지할 것으로 본다는 뜻입니다. <b>미평가</b>는 모닝스타 애널리스트가 커버하지 않아 등급이 없는 종목이며, 해자가 없다는 뜻이 아닙니다. 재무지표만으로 등급을 추정하는 퀀트 모델 값은 브랜드나 전환비용 같은 정성적 판단이 빠져 있어 사용하지 않았습니다. ETF는 개별 기업이 아니라 해자 등급 대상이 아니므로 <b>-</b>로 표시됩니다.</p>
+    <p><b>PER</b>은 미국 증권거래위원회(SEC)에 실제 공시된 분기 EPS를 이어 붙여 최근 12개월 EPS를 만들고, 주가를 나눠 계산한 트레일링 PER입니다. 과거 PER도 그 시점에 <b>공시돼 있던</b> 실적으로만 계산했고 액면분할도 보정했습니다. <b>PER 위치</b>는 최근 10년 중 지금보다 PER이 낮았던 기간의 비율이며, 숫자가 낮을수록 역사적으로 싼 구간입니다.</p>
+    <p>PER이 <b>-</b>인 종목은 적자이거나(EPS가 0 이하) ETF, 또는 해외 회계기준으로 보고해 분기 EPS를 얻지 못한 경우입니다. 은행·보험은 금리 환경에 따라, 리츠는 감가상각 때문에 PER 해석이 왜곡되기 쉽습니다(리츠는 P/FFO가 정석입니다). 실적이 일시적으로 급감하면 PER이 치솟아 비싸 보이고, 반대로 정점 실적에서는 싸 보이는 착시도 있으니 배당 밴드·해자와 함께 보세요.</p>
     <p>종목명 옆의 <b>이력 6.2년</b> 같은 회색 딱지는 배당 데이터가 10년보다 짧다는 표시입니다. 이런 종목의 백분위는 짧은 기간 안에서의 위치라 밴드 신뢰도가 낮습니다.</p>
     <p>배당수익률이 높다고 반드시 저평가된 것은 아닙니다. 주가 급락이나 향후 배당 삭감 가능성 때문에 배당수익률이 높아질 수도 있습니다. 지수 편입 종목만 다루므로 배당을 삭감해 지수에서 제외된 기업은 애초에 목록에 없다는 점(생존 편향)도 감안하세요.</p>
     <p>커버드콜 ETF(JEPI·JEPQ·DIVO 등)의 분배금은 옵션 프리미엄에 연동돼 매월 변동하므로 배당 증가(유지) 기간이 짧게 나오는 것이 정상입니다.</p>
-    <p>본 서비스는 투자 참고용이며 투자 권유가 아닙니다. 데이터는 Yahoo Finance 및 Morningstar 공개 자료 기반이며 오류가 있을 수 있으니 실제 투자 전 원문을 확인하세요.</p>
+    <p>본 서비스는 투자 참고용이며 투자 권유가 아닙니다. 데이터는 Yahoo Finance · SEC EDGAR · Morningstar 공개 자료 기반이며 오류가 있을 수 있으니 실제 투자 전 원문을 확인하세요.</p>
   </section>
 </main>
 
@@ -153,6 +184,7 @@
     </div>
 
     <div class="m-band">
+      <div class="m-sec-title">10년 배당수익률 밴드</div>
       <div class="band-head">
         <span class="t-left">고평가</span><span class="t-mid">중립</span><span class="t-right">저평가</span>
       </div>
@@ -167,6 +199,33 @@
       <p class="m-note" id="m-note">—</p>
     </div>
 
+    <div class="m-band m-pe" id="m-pe-wrap">
+      <div class="m-sec-title">10년 PER 밴드</div>
+      <div class="m-kpi">
+        <div><span>현재 PER</span><b id="m-pe">—</b></div>
+        <div><span>최근 12개월 EPS</span><b id="m-peps">—</b></div>
+        <div><span>10년 중앙 PER</span><b id="m-pe50">—</b></div>
+        <div><span>10년 평균 PER</span><b id="m-peavg">—</b></div>
+      </div>
+      <div class="band-head">
+        <span class="t-left">저평가</span><span class="t-mid">중립</span><span class="t-right">고평가</span>
+      </div>
+      <div class="bar bar-rev"><div id="m-pemarker" class="marker"><span id="m-pemarker-t">—</span></div></div>
+      <ul class="plist">
+        <li><span>가장 쌌던 10% 구간</span><b id="m-pe10">—</b></li>
+        <li><span>25% PER</span><b id="m-pe25">—</b></li>
+        <li><span>중앙 PER</span><b id="m-pe50b">—</b></li>
+        <li><span>75% PER</span><b id="m-pe75">—</b></li>
+        <li><span>가장 비쌌던 90% 구간</span><b id="m-pe90">—</b></li>
+      </ul>
+      <p class="m-note" id="m-penote">—</p>
+    </div>
+
+    <div class="m-band m-pe" id="m-pe-none" hidden>
+      <div class="m-sec-title">10년 PER 밴드</div>
+      <p class="m-note">PER 데이터가 없는 종목입니다. ETF이거나, 최근 12개월 EPS가 0 이하(적자)이거나, 해외 회계기준으로 보고해 분기 EPS를 얻지 못한 경우입니다.</p>
+    </div>
+
     <div class="m-links">
       <a id="m-band-link" href="https://chojh16.github.io/dividend-band/" target="_blank" rel="noopener">10년 밴드 상세 분석 ↗</a>
       <a id="m-yahoo" href="#" target="_blank" rel="noopener">Yahoo Finance ↗</a>
@@ -174,6 +233,6 @@
   </div>
 </div>
 
-<footer class="ft"><div class="wrap">데이터 출처 Yahoo Finance · Morningstar 공개 데이터 · 매 평일 자동 갱신</div></footer>
+<footer class="ft"><div class="wrap">데이터 출처 Yahoo Finance · SEC EDGAR · Morningstar 공개 데이터 · 매 평일 자동 갱신</div></footer>
 </body>
 </html>
