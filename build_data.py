@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 S&P 500 + 나스닥 100 + 대표 배당 ETF의
-10년 배당수익률 밴드 + 모닝스타 해자 등급 + 야후 선행 PER 데이터를 만들어
+10년 배당수익률 밴드 + 모닝스타 해자 등급 데이터를 만들어
 data/screener_us.json 으로 저장한다.
 """
 
@@ -18,9 +18,6 @@ STALE_FACTOR    = 1.8
 MAX_YIELD       = 40.0
 CHUNK           = 25
 SLEEP           = 2.0
-
-PE_MAX   = 300.0     # 이보다 큰 PER은 의미가 없어 버린다
-PE_PAUSE = 0.30      # 야후 조회 간격
 
 START_DATE = (dt.date.today() - dt.timedelta(days=int(365.25 * FETCH_YEARS))).isoformat()
 
@@ -222,45 +219,16 @@ def lookup_moat(sym, moat_map):
             return moat_map[key]
     return {}
 
-def load_prev(keys):
-    """직전 결과에서 필요한 값만 꺼내 둔다(수집 실패 시 재사용)."""
+def load_prev_moat():
+    """해자 수집이 실패했을 때 쓸 직전 결과."""
     try:
         with open("data/screener_us.json", encoding="utf-8") as f:
             old = json.load(f)
-        return {x["sym"]: {k: x.get(k) for k in keys} for x in old.get("items", [])}
+        return {x["sym"]: {"moat": x.get("moat"), "qmoat": x.get("qmoat"),
+                           "star": x.get("star")}
+                for x in old.get("items", []) if x.get("moat") or x.get("qmoat")}
     except Exception:
         return {}
-
-# ----------------------------------------------------------- 야후 선행 PER
-def fetch_info(sym, tries=2):
-    for i in range(tries):
-        try:
-            info = yf.Ticker(sym).info
-            if isinstance(info, dict) and info:
-                return info
-        except Exception:
-            pass
-        time.sleep(0.8 + i)
-    return {}
-
-def num(v):
-    try:
-        v = float(v)
-        return v if np.isfinite(v) else None
-    except Exception:
-        return None
-
-def pick_forward_pe(info, px):
-    """야후의 선행 PER. 값이 없으면 예상 EPS로 직접 계산한다."""
-    if not isinstance(info, dict):
-        return None, None
-    feps = num(info.get("forwardEps"))
-    pe = num(info.get("forwardPE"))
-    if (pe is None or pe <= 0 or pe > PE_MAX) and feps and feps > 0 and px > 0:
-        pe = px / feps
-    if pe is None or pe <= 0 or pe > PE_MAX:
-        return None, (round(feps, 2) if feps and feps > 0 else None)
-    return round(pe, 1), (round(feps, 2) if feps and feps > 0 else None)
 
 # ----------------------------------------------------------- 데이터 수집
 def to_naive(idx):
@@ -442,7 +410,8 @@ def main():
     if len(uni) < 200:
         raise SystemExit("종목 목록을 가져오지 못했습니다. 잠시 후 다시 실행하세요.")
 
-    prev = load_prev(("moat", "qmoat", "star", "fpe", "feps"))
+    # 해자 등급을 먼저 받아둔다. 실패해도 빌드는 계속한다.
+    prev_moat = load_prev_moat()
     try:
         moat_map = fetch_moat_map()
     except Exception as e:
@@ -463,41 +432,24 @@ def main():
         if r:
             items.append(r)
 
-    # 해자 등급 + 섹터 + 선행 PER
-    n_moat, n_pe, n_old, done = 0, 0, 0, 0
-    print(f"[선행PER] {len(items)}종목 조회 시작 (몇 분 걸립니다)")
+    # 섹터 한글화 + 해자 등급 결합
+    n_moat = 0
     for it in items:
-        sym = it["sym"]
-
-        info = {} if it["etf"] else fetch_info(sym)
-
         if str(it["sec"]).strip() in ("", "-", "nan", "None"):
-            it["sec"] = info.get("sector") or ""
+            try:
+                s = yf.Ticker(it["sym"]).info.get("sector")
+                it["sec"] = s if s else ""
+            except Exception:
+                it["sec"] = ""
+            time.sleep(0.4)
         it["sec"] = ko_sector(it["sec"])
 
-        old = prev.get(sym, {})
-        src = lookup_moat(sym, moat_map) if moat_map else old
-        it["moat"]  = src.get("moat")
-        it["qmoat"] = src.get("qmoat")
-        it["star"]  = src.get("star")
+        info = lookup_moat(it["sym"], moat_map) if moat_map else prev_moat.get(it["sym"], {})
+        it["moat"]  = info.get("moat")
+        it["qmoat"] = info.get("qmoat")
+        it["star"]  = info.get("star")
         if it["moat"]:
             n_moat += 1
-
-        if not it["etf"]:
-            pe, feps = pick_forward_pe(info, it["px"])
-            if pe is None and old.get("fpe"):      # 오늘 조회 실패 → 직전 값 재사용
-                pe, feps = old.get("fpe"), old.get("feps")
-                n_old += 1
-            if pe is not None:
-                it["fpe"] = pe
-                if feps is not None:
-                    it["feps"] = feps
-                n_pe += 1
-            time.sleep(PE_PAUSE)
-
-        done += 1
-        if done % 50 == 0:
-            print(f"  진행 {done}/{len(items)} · 선행PER {n_pe}개")
 
     if len(items) < 100:
         raise SystemExit(f"수집 결과가 너무 적습니다({len(items)}개). 다시 실행하세요.")
@@ -506,17 +458,15 @@ def main():
     wide = sum(1 for x in items if x.get("moat") == "Wide")
     narrow = sum(1 for x in items if x.get("moat") == "Narrow")
     none_ = sum(1 for x in items if x.get("moat") == "None")
-    stocks = sum(1 for x in items if not x["etf"])
     print(f"[점검] 이력 10년 미만: {short}개 / 전체 {len(items)}개")
     print(f"[해자] 등급 있음 {n_moat}개 · 넓음 {wide} · 좁음 {narrow} · 없음 {none_}")
-    print(f"[선행PER] 값 있음 {n_pe}개 / 개별종목 {stocks}개 (직전 값 재사용 {n_old}개)")
 
     for chk in ("AAPL", "PFE", "KO", "BF-B", "MRSH", "SCHD", "JEPQ"):
         hit = next((x for x in items if x["sym"] == chk), None)
         if hit:
             print(f"[확인] {chk} {hit['name']} · {hit['sec']} · 수익률 {hit['y']}% · "
                   f"백분위 {hit['pct']} · 유지 {hit['streak']}년 · "
-                  f"해자 {hit.get('moat') or '-'} · 선행PER {hit.get('fpe') or '-'}")
+                  f"해자 {hit.get('moat') or '-'} (퀀트 {hit.get('qmoat')})")
         else:
             print(f"[확인] {chk} → 결과에 없음")
 
@@ -527,7 +477,6 @@ def main():
         "updated": kst.strftime("%Y-%m-%d %H:%M KST"),
         "universe": len(uni),
         "count": len(items),
-        "peCount": n_pe,
         "items": items,
     }
     with open("data/screener_us.json", "w", encoding="utf-8") as f:
